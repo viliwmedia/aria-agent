@@ -33,12 +33,17 @@ function buildSummary(monthKey) {
     totals,
     show_rate_pct: showRate,
     close_rate_pct: closeRate,
-    goal: settings ? { type: settings.goal_type, target: settings.goal_number } : null,
+    goal: settings ? { type: settings.goal_type, target: settings.goal_number, revenue_per_close: settings.revenue_per_close || null } : null,
     pace: null,
   };
 
   if (settings) {
-    const goalVal = { appointments: totals.appts, shows: totals.shows, closes: totals.closes }[settings.goal_type];
+    const isIncome = settings.goal_type === 'income';
+    const revenuePerClose = settings.revenue_per_close || 0;
+    const goalVal = isIncome
+      ? +(totals.closes * revenuePerClose).toFixed(2)
+      : { appointments: totals.appts, shows: totals.shows, closes: totals.closes }[settings.goal_type];
+
     const [y, m] = mk.split('-').map(Number);
     const monthStart = new Date(y, m - 1, 1);
     const monthEnd = new Date(y, m, 0);
@@ -75,7 +80,28 @@ function buildSummary(monthKey) {
       status,
     };
 
-    if (totals.dials > 0 && goalVal > 0 && settings.goal_type !== 'closes') {
+    if (isIncome && revenuePerClose > 0) {
+      // Back-calculate the full activity ladder needed to hit the income
+      // target: closes -> shows -> appointments -> dials, each derived from
+      // this month's real conversion rates so the numbers reflect actual
+      // performance, not a generic assumption.
+      const requiredClosesPerDay = +(requiredPerDay / revenuePerClose).toFixed(2);
+      result.pace.revenue_per_close = revenuePerClose;
+      result.pace.required_closes_per_day = requiredClosesPerDay;
+
+      if (closeRate > 0) {
+        result.pace.required_shows_per_day = +(requiredClosesPerDay / (closeRate / 100)).toFixed(2);
+      }
+      if (showRate > 0 && result.pace.required_shows_per_day) {
+        result.pace.required_appts_per_day = +(result.pace.required_shows_per_day / (showRate / 100)).toFixed(2);
+      }
+      if (totals.dials > 0 && totals.appts > 0 && result.pace.required_appts_per_day) {
+        const apptsPerDial = totals.appts / totals.dials;
+        result.pace.required_dials_per_day = apptsPerDial > 0
+          ? Math.ceil(result.pace.required_appts_per_day / apptsPerDial)
+          : null;
+      }
+    } else if (totals.dials > 0 && goalVal > 0 && settings.goal_type !== 'closes') {
       const convRate = goalVal / totals.dials;
       result.pace.required_dials_per_day = convRate > 0 ? Math.ceil(requiredPerDay / convRate) : null;
     }
@@ -141,14 +167,97 @@ const definitions = [
   },
   {
     name: 'set_monthly_goal',
-    description: "Set or update the user's monthly goal metric and target number.",
+    description: "Set or update the user's monthly goal. For 'income', goal_number is the dollar income target and revenue_per_close (dollars earned per closed deal) is required so the required daily activity (closes, shows, appointments, dials) can be back-calculated from real conversion rates. For other types, goal_number is a plain count.",
     input_schema: {
       type: 'object',
       properties: {
-        goal_type: { type: 'string', enum: ['appointments', 'shows', 'closes'] },
-        goal_number: { type: 'number' },
+        goal_type: { type: 'string', enum: ['appointments', 'shows', 'closes', 'income'] },
+        goal_number: { type: 'number', description: 'Target count, or dollar income target if goal_type is income.' },
+        revenue_per_close: { type: 'number', description: 'Required when goal_type is income: average dollars earned per closed deal.' },
       },
       required: ['goal_type', 'goal_number'],
+    },
+  },
+  {
+    name: 'save_note',
+    description: "Save a fact about the user's job, role, targets, product, commission structure, or anything else they want remembered and available in every future conversation. Use this whenever the user shares context worth retaining long-term (not just this conversation) \u2014 e.g. 'my commission is 20%', 'my manager is Sarah', 'we sell a $3k/mo SaaS product'. Don't ask permission first, just save it and confirm briefly.",
+    input_schema: {
+      type: 'object',
+      properties: { content: { type: 'string', description: 'The fact to remember, written as a short standalone statement.' } },
+      required: ['content'],
+    },
+  },
+  {
+    name: 'get_notes',
+    description: "List saved facts about the user. Usually unnecessary \u2014 known facts are already included in your instructions \u2014 but useful if the user asks what you know or have saved about them.",
+    input_schema: {
+      type: 'object',
+      properties: { limit: { type: 'number', description: 'Defaults to 50.' } },
+    },
+  },
+  {
+    name: 'delete_note',
+    description: 'Delete a previously saved fact by its id (get the id from get_notes).',
+    input_schema: {
+      type: 'object',
+      properties: { id: { type: 'number' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'create_event',
+    description: "Create an event or reminder at a specific date and time. Once push notifications are enabled on the user's device, they'll be notified at that time. Always resolve relative times ('tomorrow at 3pm', 'in two hours') to an absolute date and time yourself using the current date and time given in your instructions, and pass event_at in 'YYYY-MM-DD HH:MM' 24-hour format.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short title, e.g. "Follow up with Acme Corp".' },
+        event_at: { type: 'string', description: "Absolute date and time as 'YYYY-MM-DD HH:MM' in 24-hour format." },
+        notes: { type: 'string', description: 'Optional extra detail.' },
+      },
+      required: ['title', 'event_at'],
+    },
+  },
+  {
+    name: 'update_event',
+    description: 'Change the title, time, or notes of an existing event. Get the id from list_events.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number' },
+        title: { type: 'string' },
+        event_at: { type: 'string', description: "'YYYY-MM-DD HH:MM' 24-hour format." },
+        notes: { type: 'string' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'delete_event',
+    description: 'Cancel/delete an event by id.',
+    input_schema: {
+      type: 'object',
+      properties: { id: { type: 'number' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'list_events',
+    description: "List the user's upcoming events/reminders, soonest first. Use this whenever they ask what's on their schedule, what's coming up, or before creating an event to check for conflicts.",
+    input_schema: {
+      type: 'object',
+      properties: { limit: { type: 'number', description: 'Defaults to 20.' } },
+    },
+  },
+  {
+    name: 'search_conversations',
+    description: "Search everything the user has ever said or been told, across all past conversations \u2014 not just the recent messages you can already see. Use this when they reference something from further back than your current context, like 'what did I tell you about the Meridian deal' or 'did we already talk about pricing'.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        limit: { type: 'number', description: 'Defaults to 20.' },
+      },
+      required: ['query'],
     },
   },
 ];
@@ -160,9 +269,32 @@ function execute(name, input) {
     case 'delete_entry': return { deleted: db.deleteEntry(input.date) };
     case 'get_performance_summary': return buildSummary(input.month);
     case 'get_recent_entries': return db.getRecentEntries(input.limit || 15);
-    case 'set_monthly_goal': return db.setGoal(input.goal_type, input.goal_number);
+    case 'set_monthly_goal': return db.setGoal(input.goal_type, input.goal_number, input.revenue_per_close);
+    case 'save_note': return db.addNote(input.content);
+    case 'get_notes': return db.getNotes(input.limit || 50);
+    case 'delete_note': return { deleted: db.deleteNote(input.id) };
+    case 'create_event': return db.createEvent({ title: input.title, event_at: parseEventTime(input.event_at), notes: input.notes });
+    case 'update_event': return db.updateEvent(input.id, {
+      title: input.title,
+      event_at: input.event_at ? parseEventTime(input.event_at) : undefined,
+      notes: input.notes,
+    });
+    case 'delete_event': return { deleted: db.deleteEvent(input.id) };
+    case 'list_events': return db.listUpcomingEvents(input.limit || 20).map(formatEventOut);
+    case 'search_conversations': return db.searchHistory(input.query, input.limit || 20);
     default: return { error: `Unknown tool: ${name}` };
   }
+}
+
+// Converts the 'YYYY-MM-DD HH:MM' string Claude sends into a stored epoch ms.
+function parseEventTime(str) {
+  const d = new Date(String(str).replace(' ', 'T'));
+  if (isNaN(d.getTime())) throw new Error(`Could not parse event time: ${str}`);
+  return d.getTime();
+}
+
+function formatEventOut(e) {
+  return { id: e.id, title: e.title, event_at: new Date(e.event_at).toISOString(), notes: e.notes };
 }
 
 module.exports = { definitions, execute, buildSummary };

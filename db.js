@@ -20,7 +20,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     goal_type TEXT NOT NULL,
-    goal_number INTEGER NOT NULL
+    goal_number REAL NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS conversation (
@@ -29,7 +29,33 @@ db.exec(`
     content TEXT NOT NULL,
     created_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    event_at INTEGER NOT NULL,
+    notes TEXT,
+    notified INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint TEXT NOT NULL UNIQUE,
+    subscription TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
 `);
+
+// Safe migration: existing databases from before the income-goal feature
+// won't have this column yet. Adding it is a no-op if it already exists.
+try { db.exec('ALTER TABLE settings ADD COLUMN revenue_per_close REAL'); } catch (e) { /* already exists */ }
 
 function todayISO() {
   const d = new Date();
@@ -87,11 +113,11 @@ function getSettings() {
   return db.prepare('SELECT * FROM settings WHERE id = 1').get() || null;
 }
 
-function setGoal(goalType, goalNumber) {
+function setGoal(goalType, goalNumber, revenuePerClose) {
   db.prepare(`
-    INSERT INTO settings (id, goal_type, goal_number) VALUES (1, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET goal_type=excluded.goal_type, goal_number=excluded.goal_number
-  `).run(goalType, goalNumber);
+    INSERT INTO settings (id, goal_type, goal_number, revenue_per_close) VALUES (1, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET goal_type=excluded.goal_type, goal_number=excluded.goal_number, revenue_per_close=excluded.revenue_per_close
+  `).run(goalType, goalNumber, revenuePerClose !== undefined ? revenuePerClose : null);
   return getSettings();
 }
 
@@ -143,6 +169,90 @@ function clearAll() {
   db.prepare('DELETE FROM entries').run();
   db.prepare('DELETE FROM settings').run();
   db.prepare('DELETE FROM conversation').run();
+  db.prepare('DELETE FROM notes').run();
+  db.prepare('DELETE FROM events').run();
+  db.prepare('DELETE FROM push_subscriptions').run();
+}
+
+// ---- Knowledge base (freeform facts Kowalski should always know) ----
+
+function addNote(content) {
+  const info = db.prepare('INSERT INTO notes (content, created_at) VALUES (?, ?)').run(content, Date.now());
+  return db.prepare('SELECT * FROM notes WHERE id = ?').get(info.lastInsertRowid);
+}
+
+function getNotes(limit = 200) {
+  return db.prepare('SELECT * FROM notes ORDER BY id DESC LIMIT ?').all(limit);
+}
+
+function deleteNote(id) {
+  return db.prepare('DELETE FROM notes WHERE id = ?').run(id).changes > 0;
+}
+
+// Compact text block of the most recent notes, for injecting into the
+// agent's system prompt so it always has this context without a tool call.
+function getNotesForPrompt(limit = 40) {
+  const rows = db.prepare('SELECT content FROM notes ORDER BY id DESC LIMIT ?').all(limit);
+  if (rows.length === 0) return '';
+  return rows.map(r => '- ' + r.content).join('\n');
+}
+
+// ---- Events / reminders ----
+
+function createEvent({ title, event_at, notes }) {
+  const info = db.prepare('INSERT INTO events (title, event_at, notes, notified, created_at) VALUES (?, ?, ?, 0, ?)')
+    .run(title, event_at, notes || null, Date.now());
+  return db.prepare('SELECT * FROM events WHERE id = ?').get(info.lastInsertRowid);
+}
+
+function updateEvent(id, { title, event_at, notes }) {
+  const existing = db.prepare('SELECT * FROM events WHERE id = ?').get(id);
+  if (!existing) return null;
+  const next = {
+    title: title !== undefined ? title : existing.title,
+    event_at: event_at !== undefined ? event_at : existing.event_at,
+    notes: notes !== undefined ? notes : existing.notes,
+  };
+  db.prepare('UPDATE events SET title=?, event_at=?, notes=?, notified=0 WHERE id=?')
+    .run(next.title, next.event_at, next.notes, id);
+  return db.prepare('SELECT * FROM events WHERE id = ?').get(id);
+}
+
+function deleteEvent(id) {
+  return db.prepare('DELETE FROM events WHERE id = ?').run(id).changes > 0;
+}
+
+function listUpcomingEvents(limit = 50) {
+  return db.prepare('SELECT * FROM events WHERE event_at >= ? ORDER BY event_at ASC LIMIT ?').all(Date.now() - 60 * 60 * 1000, limit);
+}
+
+function listAllEvents(limit = 200) {
+  return db.prepare('SELECT * FROM events ORDER BY event_at DESC LIMIT ?').all(limit);
+}
+
+function getDueUnnotifiedEvents(nowMs) {
+  return db.prepare('SELECT * FROM events WHERE notified = 0 AND event_at <= ?').all(nowMs);
+}
+
+function markEventNotified(id) {
+  db.prepare('UPDATE events SET notified = 1 WHERE id = ?').run(id);
+}
+
+// ---- Push notification subscriptions ----
+
+function saveSubscription(sub) {
+  db.prepare(`
+    INSERT INTO push_subscriptions (endpoint, subscription, created_at) VALUES (?, ?, ?)
+    ON CONFLICT(endpoint) DO UPDATE SET subscription=excluded.subscription
+  `).run(sub.endpoint, JSON.stringify(sub), Date.now());
+}
+
+function getSubscriptions() {
+  return db.prepare('SELECT * FROM push_subscriptions').all().map(r => JSON.parse(r.subscription));
+}
+
+function deleteSubscriptionByEndpoint(endpoint) {
+  db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint);
 }
 
 module.exports = {
@@ -150,4 +260,7 @@ module.exports = {
   addActivity, correctEntry, deleteEntry, getRecentEntries, getMonthEntries,
   getSettings, setGoal,
   appendMessage, getHistory, getHistoryForDisplay, getHistoryBefore, searchHistory, clearConversation, clearAll,
+  addNote, getNotes, deleteNote, getNotesForPrompt,
+  createEvent, updateEvent, deleteEvent, listUpcomingEvents, listAllEvents, getDueUnnotifiedEvents, markEventNotified,
+  saveSubscription, getSubscriptions, deleteSubscriptionByEndpoint,
 };

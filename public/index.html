@@ -93,6 +93,9 @@
   .icon-btn.send{ background:var(--cyan-dim); border-color:var(--cyan); color:var(--cyan); }
   .icon-btn.send:hover{ box-shadow:0 0 10px var(--cyan-glow); }
   .icon-btn.mic.listening{ background:var(--red); border-color:var(--red); color:#fff; animation:micpulse 1s infinite; }
+  .icon-btn.mic.handsfree{ border-color:var(--cyan); color:var(--cyan); box-shadow:0 0 10px var(--cyan-glow); }
+  .icon-btn.mic.handsfree.listening{ background:var(--red); border-color:var(--red); color:#fff; }
+  .handsfree-badge{ font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--cyan); text-align:center; padding:6px; text-transform:uppercase; animation:pulse-dot 2s ease-in-out infinite; }
   @keyframes micpulse{ 0%,100%{box-shadow:0 0 0 0 rgba(255,92,92,0.5);} 50%{box-shadow:0 0 0 8px rgba(255,92,92,0);} }
 
   /* dashboard */
@@ -163,6 +166,15 @@
   .hist-item .hist-meta .role-aria{ color:var(--green); }
   .hist-item .hist-text{ font-size:13px; color:var(--text); line-height:1.45; }
   .hist-text mark{ background:var(--cyan-glow); color:var(--text); border-radius:2px; padding:0 1px; }
+  .know-add{ padding:0 18px 12px; border-bottom:1px solid var(--border); margin-bottom:12px; }
+  .know-textarea{ width:100%; resize:vertical; background:var(--bg-void); border:1px solid var(--border-bright); color:var(--text); padding:10px 12px; border-radius:5px; font-family:var(--sans); font-size:13px; outline:none; }
+  .know-textarea:focus{ border-color:var(--cyan); box-shadow:0 0 0 1px var(--cyan-glow); }
+  .hist-item .know-del{ float:right; cursor:pointer; color:var(--text-faint); font-family:var(--mono); font-size:10px; }
+  .hist-item .know-del:hover{ color:var(--red); }
+  .notif-row{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--border); border-radius:5px; background:var(--bg-void); }
+  .notif-status{ font-family:var(--mono); font-size:10px; letter-spacing:0.06em; color:var(--text-dim); text-transform:uppercase; }
+  .notif-status.on{ color:var(--green); }
+  .notif-status.off{ color:var(--text-faint); }
 </style>
 </head>
 <body>
@@ -185,6 +197,46 @@
     <input type="text" id="histSearch" class="hist-search" placeholder="Search past conversations...">
     <div class="hist-results" id="histResults">
       <div class="hist-empty">Type to search across everything you've discussed.</div>
+    </div>
+  </div>
+</div>
+
+<div class="hist-overlay hidden" id="knowOverlay">
+  <div class="hist-panel">
+    <div class="hist-head">
+      <span>KNOWLEDGE BASE</span>
+      <span class="hist-close" id="knowClose">✕</span>
+    </div>
+    <div class="know-add">
+      <textarea id="knowInput" class="know-textarea" rows="2" placeholder="Add anything Kowalski should always know \u2014 commission rate, product details, targets, context..."></textarea>
+      <button class="btn" id="knowAddBtn" style="margin-top:8px;">ADD TO KNOWLEDGE BASE</button>
+    </div>
+    <div class="hist-results" id="knowResults">
+      <div class="hist-empty">Nothing saved yet. Add a fact above, or just tell Kowalski something worth remembering in chat.</div>
+    </div>
+  </div>
+</div>
+
+<div class="hist-overlay hidden" id="eventsOverlay">
+  <div class="hist-panel">
+    <div class="hist-head">
+      <span>EVENTS & REMINDERS</span>
+      <span class="hist-close" id="eventsClose">✕</span>
+    </div>
+    <div class="know-add">
+      <div class="notif-row">
+        <span id="notifStatus" class="notif-status">Notifications: checking...</span>
+        <button class="btn" id="notifBtn" style="padding:6px 12px; font-size:10px;">ENABLE NOTIFICATIONS</button>
+      </div>
+      <div class="mini-form" style="margin-top:12px;">
+        <div class="field" style="grid-column:1 / -1;"><label>Title</label><input type="text" id="evTitle" placeholder="Follow up with Acme Corp"></div>
+        <div class="field"><label>Date & time</label><input type="datetime-local" id="evWhen"></div>
+        <div class="field"><label>Notes (optional)</label><input type="text" id="evNotes" placeholder=""></div>
+      </div>
+      <button class="btn" id="evAddBtn" style="margin-top:8px;">ADD EVENT</button>
+    </div>
+    <div class="hist-results" id="eventsResults">
+      <div class="hist-empty">Nothing scheduled. Add one above, or just tell Kowalski to plan something.</div>
     </div>
   </div>
 </div>
@@ -215,12 +267,15 @@
         <span>CONVERSATION</span>
         <span style="display:flex; gap:14px; align-items:center;">
           <span class="mobile-dash-btn" id="historyBtn" style="display:inline; cursor:pointer; color:var(--cyan);">HISTORY ▸</span>
+          <span class="mobile-dash-btn" id="knowledgeBtn" style="display:inline; cursor:pointer; color:var(--cyan);">KNOWLEDGE ▸</span>
+          <span class="mobile-dash-btn" id="eventsBtn" style="display:inline; cursor:pointer; color:var(--cyan);">EVENTS ▸</span>
           <span class="mobile-dash-btn" id="mobileDashBtn">STATS ▸</span>
         </span>
       </div>
       <div class="messages" id="messages"></div>
+      <div class="handsfree-badge hidden" id="handsFreeBadge">🔴 LIVE CONVERSATION \u2014 tap the mic to stop</div>
       <div class="composer">
-        <button class="icon-btn mic" id="micBtn" title="Hold to speak">
+        <button class="icon-btn mic" id="micBtn" title="Tap to start a hands-free conversation">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
         <textarea id="input" rows="1" placeholder="Ask Kowalski anything, or log your numbers..."></textarea>
@@ -251,9 +306,12 @@
         <div class="panel-label">SET MONTHLY GOAL</div>
         <div class="mini-form">
           <div class="field"><label>Metric</label>
-            <select id="goalType"><option value="appointments">Appointments</option><option value="shows">Shows</option><option value="closes">Closes</option></select>
+            <select id="goalType"><option value="appointments">Appointments</option><option value="shows">Shows</option><option value="closes">Closes</option><option value="income">Income ($)</option></select>
           </div>
-          <div class="field"><label>Target</label><input type="number" id="goalNumber" min="1" placeholder="60"></div>
+          <div class="field" id="goalNumberField"><label>Target</label><input type="number" id="goalNumber" min="1" placeholder="60"></div>
+        </div>
+        <div class="mini-form" id="revenueField" style="display:none; margin-top:8px;">
+          <div class="field" style="grid-column:1 / -1;"><label>Revenue per close ($)</label><input type="number" id="revenuePerClose" min="1" placeholder="e.g. 500"></div>
         </div>
         <button class="btn full" id="saveGoal">SAVE GOAL</button>
       </div>
@@ -262,8 +320,16 @@
         <div class="panel-label">PACE</div>
         <div class="stat-row"><span class="stat-label">Days Left (working)</span><span class="stat-val" id="sDays">—</span></div>
         <div class="stat-row"><span class="stat-label">Current Daily Avg</span><span class="stat-val" id="sAvg">—</span></div>
-        <div class="stat-row"><span class="stat-label">Required / Day</span><span class="stat-val hi" id="sReq">—</span></div>
+        <div class="stat-row"><span class="stat-label" id="sReqLabel">Required / Day</span><span class="stat-val hi" id="sReq">—</span></div>
         <div class="stat-row"><span class="stat-label">Projected End</span><span class="stat-val" id="sProj">—</span></div>
+      </div>
+
+      <div class="panel hidden" id="ladderPanel">
+        <div class="panel-label">KPI LADDER \u00b7 REQUIRED / DAY</div>
+        <div class="stat-row"><span class="stat-label">Closes</span><span class="stat-val hi" id="lClose">—</span></div>
+        <div class="stat-row"><span class="stat-label">Shows</span><span class="stat-val hi" id="lShow">—</span></div>
+        <div class="stat-row"><span class="stat-label">Appointments</span><span class="stat-val hi" id="lAppt">—</span></div>
+        <div class="stat-row"><span class="stat-label">Dials</span><span class="stat-val hi" id="lDial">—</span></div>
       </div>
 
       <div class="panel">
@@ -371,7 +437,7 @@ function pickVoice(){
 }
 
 function speak(text){
-  if(!narrationOn || !window.speechSynthesis) return;
+  if(!narrationOn || !window.speechSynthesis) return false;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   const pref = pickVoice();
@@ -380,8 +446,9 @@ function speak(text){
   // "briefing" in tone rather than chipper assistant-speak.
   u.rate = 0.98; u.pitch = 0.92;
   u.onstart = ()=> $('orb').classList.add('speaking');
-  u.onend = ()=> $('orb').classList.remove('speaking');
+  u.onend = ()=> { $('orb').classList.remove('speaking'); resumeHandsFreeIfActive(); };
   window.speechSynthesis.speak(u);
+  return true;
 }
 
 // ---------- chat rendering ----------
@@ -415,11 +482,18 @@ async function send(text){
   try{
     const data = await api('/api/chat', { method:'POST', body: JSON.stringify({ message:text }) });
     hideTyping();
-    if(data.reply){ addMessage('aria', data.reply); speak(data.reply); }
+    if(data.reply){
+      addMessage('aria', data.reply);
+      const spoke = speak(data.reply);
+      if(!spoke) resumeHandsFreeIfActive(); // narration off / unsupported: resume immediately instead of waiting on TTS onend
+    } else {
+      resumeHandsFreeIfActive();
+    }
     if(data.summary) renderDash(data.summary);
   }catch(err){
     hideTyping();
     addMessage('aria', err.message==='unauthorized' ? 'Session expired. Refresh and re-enter your password.' : 'Connection issue — is the server running?');
+    resumeHandsFreeIfActive();
   }
   sending = false;
 }
@@ -430,29 +504,69 @@ function autosize(){ const t=$('input'); t.style.height='auto'; t.style.height=M
 $('input').addEventListener('input', autosize);
 
 // ---------- voice input (Web Speech API) ----------
+// Hands-free mode: one tap turns on a continuous back-and-forth loop.
+// Kowalski listens, sends what you said, speaks the reply, then
+// automatically starts listening again \u2014 no need to tap the mic each turn.
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recog = null, listening = false;
+let recog = null, listening = false, handsFree = false;
+
+function updateHandsFreeUI(){
+  $('micBtn').classList.toggle('handsfree', handsFree);
+  $('handsFreeBadge').classList.toggle('hidden', !handsFree);
+}
+function startListening(){
+  if(!recog || listening) return;
+  listening = true; $('micBtn').classList.add('listening'); $('input').value='';
+  try{ recog.start(); }catch(e){ listening=false; $('micBtn').classList.remove('listening'); }
+}
+function stopListening(){
+  if(recog && listening){ try{ recog.stop(); }catch(e){} }
+  listening = false; $('micBtn').classList.remove('listening');
+}
+function resumeHandsFreeIfActive(){
+  if(handsFree && !listening){
+    // small pause so it doesn't clip the tail end of the reply / feels natural
+    setTimeout(()=>{ if(handsFree && !listening) startListening(); }, 350);
+  }
+}
+
 if(SR){
   recog = new SR();
   recog.lang = 'en-US'; recog.interimResults = true; recog.continuous = false;
-  let finalText = '';
   recog.onresult = e=>{
-    let interim=''; finalText='';
+    let interim=''; let finalText='';
     for(let i=e.resultIndex;i<e.results.length;i++){
       if(e.results[i].isFinal) finalText += e.results[i][0].transcript;
       else interim += e.results[i][0].transcript;
     }
     $('input').value = (finalText || interim); autosize();
   };
-  recog.onend = ()=>{ listening=false; $('micBtn').classList.remove('listening'); if($('input').value.trim()) send(); };
-  recog.onerror = ()=>{ listening=false; $('micBtn').classList.remove('listening'); };
+  recog.onend = ()=>{
+    listening=false; $('micBtn').classList.remove('listening');
+    const text = $('input').value.trim();
+    if(text){ send(); }
+    else if(handsFree){ setTimeout(()=>{ if(handsFree) startListening(); }, 500); }
+  };
+  recog.onerror = (e)=>{
+    listening=false; $('micBtn').classList.remove('listening');
+    if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+      handsFree = false; updateHandsFreeUI();
+      addMessage('aria', "I don't have microphone permission \u2014 check your browser settings.");
+      return;
+    }
+    // Transient errors (no-speech, network blip, etc.) just retry in hands-free mode.
+    if(handsFree){ setTimeout(()=>{ if(handsFree) startListening(); }, 600); }
+  };
 }
+
 $('micBtn').addEventListener('click', ()=>{
   if(!recog){ addMessage('aria', "Voice input isn't supported in this browser — try Chrome, or just type."); return; }
-  if(listening){ recog.stop(); return; }
   if(window.speechSynthesis) window.speechSynthesis.cancel();
-  listening = true; $('micBtn').classList.add('listening'); $('input').value='';
-  try{ recog.start(); }catch(e){}
+  if(handsFree){
+    handsFree = false; updateHandsFreeUI(); stopListening();
+  } else {
+    handsFree = true; updateHandsFreeUI(); startListening();
+  }
 });
 
 // ---------- dashboard ----------
@@ -468,24 +582,40 @@ function renderDash(s){
   $('kShowBar').style.width = Math.min(s.show_rate_pct||0,100)+'%';
   $('kCloseBar').style.width = Math.min(s.close_rate_pct||0,100)+'%';
 
-  const labelMap={appointments:'GOAL · APPOINTMENTS',shows:'GOAL · SHOWS',closes:'GOAL · CLOSES'};
+  const labelMap={appointments:'GOAL · APPOINTMENTS',shows:'GOAL · SHOWS',closes:'GOAL · CLOSES',income:'GOAL · INCOME'};
   if(s.goal){ $('goalLabel').textContent = labelMap[s.goal.type]||'GOAL'; }
+  const isIncome = s.goal && s.goal.type === 'income';
+  const money = n => '$'+Number(n||0).toLocaleString();
+  const fmt = n => isIncome ? money(n) : n;
 
   if(s.pace){
     const p = s.pace;
     animateRing(p.pct_to_goal||0);
-    $('ringSub').textContent = p.current_value+' / '+p.target;
+    $('ringSub').textContent = fmt(p.current_value)+' / '+fmt(p.target);
     $('sDays').textContent = p.working_days_remaining+' of '+p.working_days_total;
-    $('sAvg').textContent = p.current_daily_avg;
-    $('sReq').textContent = p.required_per_remaining_day;
-    $('sProj').textContent = p.projected_month_end+' / '+p.target;
+    $('sAvg').textContent = fmt(p.current_daily_avg);
+    $('sReqLabel').textContent = isIncome ? 'Required $ / Day' : 'Required / Day';
+    $('sReq').textContent = fmt(p.required_per_remaining_day);
+    $('sProj').textContent = fmt(p.projected_month_end)+' / '+fmt(p.target);
     const chip=$('statusChip');
     const map={target_hit:['status-green','TARGET HIT'],on_pace:['status-green','ON PACE'],at_risk:['status-amber','AT RISK'],behind:['status-red','BEHIND']};
     const [cls,txt]=map[p.status]||['status-cyan','—'];
     chip.className='status-chip '+cls; chip.textContent=txt;
+
+    if(isIncome && typeof p.required_closes_per_day === 'number'){
+      $('ladderPanel').classList.remove('hidden');
+      $('lClose').textContent = p.required_closes_per_day;
+      $('lShow').textContent = typeof p.required_shows_per_day === 'number' ? p.required_shows_per_day : '—';
+      $('lAppt').textContent = typeof p.required_appts_per_day === 'number' ? p.required_appts_per_day : '—';
+      $('lDial').textContent = typeof p.required_dials_per_day === 'number' ? p.required_dials_per_day : '—';
+    } else {
+      $('ladderPanel').classList.add('hidden');
+    }
   } else {
     animateRing(0); $('ringSub').textContent='0 / 0';
     $('statusChip').className='status-chip status-cyan'; $('statusChip').textContent='NO GOAL SET';
+    $('sReqLabel').textContent = 'Required / Day';
+    $('ladderPanel').classList.add('hidden');
   }
 }
 
@@ -507,10 +637,22 @@ function animateRing(target){
 
 // goal editor
 $('editGoal').addEventListener('click', ()=>{ const p=$('goalEditPanel'); p.style.display = p.style.display==='none'?'block':'none'; });
+$('goalType').addEventListener('change', ()=>{
+  const isIncome = $('goalType').value === 'income';
+  $('revenueField').style.display = isIncome ? 'grid' : 'none';
+  $('goalNumberField').querySelector('label').textContent = isIncome ? 'Monthly income target ($)' : 'Target';
+  $('goalNumber').placeholder = isIncome ? 'e.g. 8000' : '60';
+});
 $('saveGoal').addEventListener('click', async ()=>{
   const goal_type=$('goalType').value; const goal_number=Number($('goalNumber').value);
   if(!goal_number||goal_number<=0){ $('goalNumber').style.borderColor='var(--red)'; return; }
-  const data=await api('/api/goal',{method:'POST',body:JSON.stringify({goal_type,goal_number})});
+  const body = { goal_type, goal_number };
+  if(goal_type === 'income'){
+    const rpc = Number($('revenuePerClose').value);
+    if(!rpc || rpc<=0){ $('revenuePerClose').style.borderColor='var(--red)'; return; }
+    body.revenue_per_close = rpc;
+  }
+  const data=await api('/api/goal',{method:'POST',body:JSON.stringify(body)});
   $('goalEditPanel').style.display='none';
   renderDash(data.summary);
 });
@@ -577,6 +719,169 @@ $('histSearch').addEventListener('input', e=>{
   }, 250);
 });
 
+// ---------- knowledge base panel ----------
+async function loadKnowledge(){
+  try{
+    const notes = await api('/api/notes');
+    if(!notes.length){
+      $('knowResults').innerHTML = '<div class="hist-empty">Nothing saved yet. Add a fact above, or just tell Kowalski something worth remembering in chat.</div>';
+      return;
+    }
+    $('knowResults').innerHTML = notes.map(n => `
+      <div class="hist-item" data-id="${n.id}">
+        <div class="hist-meta"><span>${formatWhen(n.created_at)}</span><span class="know-del" data-id="${n.id}">DELETE</span></div>
+        <div class="hist-text">${escapeHtml(n.content)}</div>
+      </div>
+    `).join('');
+    $('knowResults').querySelectorAll('.know-del').forEach(el=>{
+      el.addEventListener('click', async ()=>{
+        await api('/api/notes/'+el.dataset.id, { method:'DELETE' });
+        loadKnowledge();
+      });
+    });
+  }catch(err){
+    $('knowResults').innerHTML = '<div class="hist-empty">Could not load \u2014 is the server running?</div>';
+  }
+}
+$('knowledgeBtn').addEventListener('click', ()=>{
+  $('knowOverlay').classList.remove('hidden');
+  $('knowInput').value='';
+  loadKnowledge();
+});
+$('knowClose').addEventListener('click', ()=> $('knowOverlay').classList.add('hidden'));
+$('knowOverlay').addEventListener('click', e=>{ if(e.target.id==='knowOverlay') $('knowOverlay').classList.add('hidden'); });
+$('knowAddBtn').addEventListener('click', async ()=>{
+  const content = $('knowInput').value.trim();
+  if(!content) return;
+  try{
+    await api('/api/notes', { method:'POST', body: JSON.stringify({ content }) });
+    $('knowInput').value='';
+    loadKnowledge();
+  }catch(err){
+    $('knowResults').innerHTML = '<div class="hist-empty">Could not save \u2014 is the server running?</div>';
+  }
+});
+
+// ---------- events / reminders ----------
+function formatEventWhen(ms){
+  const d = new Date(ms);
+  return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) + ' \u00b7 ' + d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+}
+async function loadEvents(){
+  try{
+    const events = await api('/api/events');
+    if(!events.length){
+      $('eventsResults').innerHTML = '<div class="hist-empty">Nothing scheduled. Add one above, or just tell Kowalski to plan something.</div>';
+      return;
+    }
+    $('eventsResults').innerHTML = events.map(e => `
+      <div class="hist-item">
+        <div class="hist-meta"><span class="role-user">${formatEventWhen(e.event_at)}</span><span class="know-del" data-id="${e.id}">DELETE</span></div>
+        <div class="hist-text"><strong>${escapeHtml(e.title)}</strong>${e.notes ? '<br>'+escapeHtml(e.notes) : ''}</div>
+      </div>
+    `).join('');
+    $('eventsResults').querySelectorAll('.know-del').forEach(el=>{
+      el.addEventListener('click', async ()=>{
+        await api('/api/events/'+el.dataset.id, { method:'DELETE' });
+        loadEvents();
+      });
+    });
+  }catch(err){
+    $('eventsResults').innerHTML = '<div class="hist-empty">Could not load \u2014 is the server running?</div>';
+  }
+}
+$('eventsBtn').addEventListener('click', ()=>{
+  $('eventsOverlay').classList.remove('hidden');
+  $('evTitle').value=''; $('evWhen').value=''; $('evNotes').value='';
+  loadEvents();
+  refreshNotifStatus();
+});
+$('eventsClose').addEventListener('click', ()=> $('eventsOverlay').classList.add('hidden'));
+$('eventsOverlay').addEventListener('click', e=>{ if(e.target.id==='eventsOverlay') $('eventsOverlay').classList.add('hidden'); });
+$('evAddBtn').addEventListener('click', async ()=>{
+  const title = $('evTitle').value.trim();
+  const when = $('evWhen').value;
+  if(!title || !when) return;
+  try{
+    await api('/api/events', { method:'POST', body: JSON.stringify({ title, event_at: new Date(when).getTime(), notes: $('evNotes').value.trim() || undefined }) });
+    $('evTitle').value=''; $('evWhen').value=''; $('evNotes').value='';
+    loadEvents();
+  }catch(err){
+    $('eventsResults').innerHTML = '<div class="hist-empty">Could not save \u2014 is the server running?</div>';
+  }
+});
+
+// ---------- push notifications ----------
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for(let i=0;i<rawData.length;i++) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+let swRegistration = null;
+async function registerServiceWorker(){
+  if(!('serviceWorker' in navigator)) return null;
+  try{
+    swRegistration = await navigator.serviceWorker.register('/sw.js');
+    return swRegistration;
+  }catch(err){ console.error('service worker registration failed', err); return null; }
+}
+async function refreshNotifStatus(){
+  const el = $('notifStatus');
+  if(!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)){
+    el.textContent = 'Not supported in this browser'; el.className='notif-status off';
+    $('notifBtn').style.display='none';
+    return;
+  }
+  $('notifBtn').style.display='';
+  if(Notification.permission === 'denied'){
+    el.textContent = 'Blocked \u2014 enable in browser settings'; el.className='notif-status off';
+    $('notifBtn').textContent='RETRY';
+    return;
+  }
+  const reg = swRegistration || await registerServiceWorker();
+  const sub = reg ? await reg.pushManager.getSubscription() : null;
+  if(sub){
+    el.textContent = 'Notifications on'; el.className='notif-status on';
+    $('notifBtn').textContent='SEND TEST';
+  } else {
+    el.textContent = 'Notifications off'; el.className='notif-status off';
+    $('notifBtn').textContent='ENABLE NOTIFICATIONS';
+  }
+}
+$('notifBtn').addEventListener('click', async ()=>{
+  const reg = swRegistration || await registerServiceWorker();
+  if(!reg){ $('notifStatus').textContent='Could not register service worker'; return; }
+  const existing = await reg.pushManager.getSubscription();
+  if(existing){
+    // Button doubles as "send test" once already subscribed
+    try{ await api('/api/push/test', { method:'POST' }); $('notifStatus').textContent='Test sent \u2014 check your device'; }
+    catch(err){ $('notifStatus').textContent='Test failed: '+(err.message||'unknown error'); }
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  if(permission !== 'granted'){ refreshNotifStatus(); return; }
+  try{
+    const cfg = await api('/api/push/public-key');
+    if(!cfg.enabled){
+      $('notifStatus').textContent = 'Server has no VAPID keys configured yet';
+      $('notifStatus').className = 'notif-status off';
+      return;
+    }
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(cfg.publicKey),
+    });
+    await api('/api/push/subscribe', { method:'POST', body: JSON.stringify(sub) });
+    refreshNotifStatus();
+  }catch(err){
+    $('notifStatus').textContent = 'Subscription failed: '+(err.message||'unknown error');
+    $('notifStatus').className = 'notif-status off';
+  }
+});
+
 // ---------- boot ----------
 async function boot(){
   // check whether a password is needed
@@ -599,6 +904,7 @@ async function tryGate(){
   }catch(e){ $('gateHint').textContent='Incorrect password.'; }
 }
 async function start(){
+  registerServiceWorker();
   // load history
   try{
     const hist = await api('/api/history');
