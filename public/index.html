@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ARIA · Performance Agent</title>
+<title>KOWALSKI · Performance Agent</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -54,6 +54,8 @@
   .brand-sub{ font-family:var(--mono); font-size:9px; letter-spacing:0.16em; color:var(--text-dim); margin-top:1px; }
   .topbar-right{ display:flex; align-items:center; gap:16px; }
   .toggle-wrap{ display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--text-dim); text-transform:uppercase; }
+  .voice-select{ background:var(--panel-2); border:1px solid var(--border-bright); color:var(--text-dim); font-family:var(--mono); font-size:10px; letter-spacing:0.05em; padding:5px 8px; border-radius:4px; outline:none; max-width:170px; }
+  .voice-select:focus{ border-color:var(--cyan); color:var(--text); }
   .toggle{ width:42px; height:22px; border-radius:12px; background:var(--panel-2); border:1px solid var(--border-bright); position:relative; cursor:pointer; transition:all .2s; }
   .toggle.on{ background:var(--cyan-dim); border-color:var(--cyan); box-shadow:0 0 8px var(--cyan-glow); }
   .toggle .knob{ position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:var(--text-dim); transition:all .2s; }
@@ -143,6 +145,24 @@
   .gate-box input{ width:100%; background:var(--bg-void); border:1px solid var(--border-bright); color:var(--text); padding:10px; border-radius:4px; font-family:var(--mono); margin-bottom:12px; outline:none; }
   .hidden{ display:none !important; }
   .hint{ font-family:var(--mono); font-size:10px; color:var(--text-faint); margin-top:10px; text-align:center; }
+
+  /* history / search overlay */
+  .hist-overlay{ position:fixed; inset:0; background:rgba(4,7,10,0.75); backdrop-filter:blur(2px); display:flex; align-items:flex-start; justify-content:center; z-index:60; padding:6vh 16px; }
+  .hist-panel{ width:100%; max-width:640px; max-height:82vh; display:flex; flex-direction:column; border:1px solid var(--border-bright); border-radius:6px; background:var(--panel); overflow:hidden; box-shadow:0 0 30px rgba(0,0,0,0.5); }
+  .hist-head{ padding:14px 18px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; font-family:var(--mono); font-size:11px; letter-spacing:0.14em; color:var(--cyan); }
+  .hist-close{ cursor:pointer; color:var(--text-dim); font-size:14px; }
+  .hist-close:hover{ color:var(--red); }
+  .hist-search{ margin:14px 18px 10px; background:var(--bg-void); border:1px solid var(--border-bright); color:var(--text); padding:10px 13px; border-radius:5px; font-family:var(--sans); font-size:14px; outline:none; }
+  .hist-search:focus{ border-color:var(--cyan); box-shadow:0 0 0 1px var(--cyan-glow); }
+  .hist-results{ flex:1; overflow-y:auto; padding:0 18px 18px; display:flex; flex-direction:column; gap:8px; }
+  .hist-results::-webkit-scrollbar{ width:6px; } .hist-results::-webkit-scrollbar-thumb{ background:var(--border-bright); border-radius:3px; }
+  .hist-empty{ font-family:var(--mono); font-size:11px; color:var(--text-faint); text-align:center; padding:30px 10px; letter-spacing:0.05em; }
+  .hist-item{ border:1px solid var(--border); border-radius:5px; padding:10px 12px; cursor:default; }
+  .hist-item .hist-meta{ display:flex; justify-content:space-between; font-family:var(--mono); font-size:9px; letter-spacing:0.08em; color:var(--text-faint); margin-bottom:5px; text-transform:uppercase; }
+  .hist-item .hist-meta .role-user{ color:var(--cyan); }
+  .hist-item .hist-meta .role-aria{ color:var(--green); }
+  .hist-item .hist-text{ font-size:13px; color:var(--text); line-height:1.45; }
+  .hist-text mark{ background:var(--cyan-glow); color:var(--text); border-radius:2px; padding:0 1px; }
 </style>
 </head>
 <body>
@@ -156,16 +176,30 @@
   </div>
 </div>
 
+<div class="hist-overlay hidden" id="histOverlay">
+  <div class="hist-panel">
+    <div class="hist-head">
+      <span>CONVERSATION HISTORY</span>
+      <span class="hist-close" id="histClose">✕</span>
+    </div>
+    <input type="text" id="histSearch" class="hist-search" placeholder="Search past conversations...">
+    <div class="hist-results" id="histResults">
+      <div class="hist-empty">Type to search across everything you've discussed.</div>
+    </div>
+  </div>
+</div>
+
 <div class="app" id="app">
   <div class="topbar">
     <div class="brand">
       <div class="orb" id="orb"></div>
       <div>
-        <div class="brand-text">ARIA</div>
-        <div class="brand-sub">PERFORMANCE AGENT</div>
+        <div class="brand-text">KOWALSKI</div>
+        <div class="brand-sub">PERSONAL AGENT</div>
       </div>
     </div>
     <div class="topbar-right">
+      <select id="voiceSelect" class="voice-select" title="Voice"></select>
       <div class="toggle-wrap">
         <span>Narration</span>
         <div class="toggle on" id="narrToggle"><div class="knob"></div></div>
@@ -179,14 +213,17 @@
     <div class="chat-col">
       <div class="chat-head">
         <span>CONVERSATION</span>
-        <span class="mobile-dash-btn" id="mobileDashBtn">STATS ▸</span>
+        <span style="display:flex; gap:14px; align-items:center;">
+          <span class="mobile-dash-btn" id="historyBtn" style="display:inline; cursor:pointer; color:var(--cyan);">HISTORY ▸</span>
+          <span class="mobile-dash-btn" id="mobileDashBtn">STATS ▸</span>
+        </span>
       </div>
       <div class="messages" id="messages"></div>
       <div class="composer">
         <button class="icon-btn mic" id="micBtn" title="Hold to speak">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
-        <textarea id="input" rows="1" placeholder="Ask ARIA anything, or log your numbers..."></textarea>
+        <textarea id="input" rows="1" placeholder="Ask Kowalski anything, or log your numbers..."></textarea>
         <button class="icon-btn send" id="sendBtn" title="Send">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
@@ -284,16 +321,64 @@ $('narrToggle').addEventListener('click', ()=>{
 
 // ---------- text to speech ----------
 let voices = [];
-function loadVoices(){ voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : []; }
+let manualVoiceURI = null;
+
+function populateVoiceSelect(){
+  const sel = $('voiceSelect');
+  if(!sel) return;
+  const englishFirst = [...voices].sort((a,b)=>{
+    const ae = /^en/i.test(a.lang) ? 0 : 1, be = /^en/i.test(b.lang) ? 0 : 1;
+    if(ae !== be) return ae - be;
+    return a.name.localeCompare(b.name);
+  });
+  sel.innerHTML = '<option value="">Auto (UK, female)</option>' +
+    englishFirst.map(v => `<option value="${v.voiceURI}">${v.name} (${v.lang})</option>`).join('');
+  if(manualVoiceURI) sel.value = manualVoiceURI;
+}
+function loadVoices(){
+  voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+  populateVoiceSelect();
+}
 if(window.speechSynthesis){ loadVoices(); window.speechSynthesis.onvoiceschanged = loadVoices; }
+if($('voiceSelect')){
+  $('voiceSelect').addEventListener('change', e => {
+    manualVoiceURI = e.target.value || null;
+    speak("Voice updated. This is how I'll sound from now on.");
+  });
+}
+
+// Picks the most "British intelligence officer" voice available in the
+// browser's installed voice set. Availability varies by browser/OS, so this
+// falls through several tiers rather than assuming one exact voice exists.
+function pickVoice(){
+  if(manualVoiceURI){
+    const chosen = voices.find(v => v.voiceURI === manualVoiceURI);
+    if(chosen) return chosen;
+  }
+  const gb = v => /en-GB/i.test(v.lang);
+  const knownUKFemale = /Sonia|Serena|Kate|Libby|Hazel|Female/i;
+  const knownMale = /Daniel|Arthur|Ryan|George|Male/i;
+
+  // Tier 1: an en-GB voice explicitly named as a known UK female voice
+  let v = voices.find(x => gb(x) && knownUKFemale.test(x.name));
+  // Tier 2: any en-GB voice that isn't explicitly a known male voice
+  if(!v) v = voices.find(x => gb(x) && !knownMale.test(x.name));
+  // Tier 3: any en-GB voice at all
+  if(!v) v = voices.find(gb);
+  // Tier 4: fall back to any English voice
+  if(!v) v = voices.find(x => /en/i.test(x.lang));
+  return v;
+}
+
 function speak(text){
   if(!narrationOn || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  // Prefer a crisp English voice if available
-  const pref = voices.find(v => /en-GB|en-US/.test(v.lang) && /Google|Samantha|Daniel|Aria/i.test(v.name)) || voices.find(v => /en/i.test(v.lang));
+  const pref = pickVoice();
   if(pref) u.voice = pref;
-  u.rate = 1.03; u.pitch = 1.0;
+  // Slightly measured pace and a touch lower pitch reads as more composed /
+  // "briefing" in tone rather than chipper assistant-speak.
+  u.rate = 0.98; u.pitch = 0.92;
   u.onstart = ()=> $('orb').classList.add('speaking');
   u.onend = ()=> $('orb').classList.remove('speaking');
   window.speechSynthesis.speak(u);
@@ -304,7 +389,7 @@ function addMessage(role, text){
   const el = document.createElement('div');
   el.className = 'msg ' + (role === 'user' ? 'user' : 'aria');
   if(role !== 'user'){
-    const who = document.createElement('span'); who.className='who'; who.textContent='ARIA'; el.appendChild(who);
+    const who = document.createElement('span'); who.className='who'; who.textContent='KOWALSKI'; el.appendChild(who);
   }
   el.appendChild(document.createTextNode(text));
   $('messages').appendChild(el);
@@ -442,6 +527,55 @@ $('quickLog').addEventListener('click', async ()=>{
 
 // mobile dash toggle
 $('mobileDashBtn').addEventListener('click', ()=> $('dash').classList.toggle('mobile-show'));
+
+// ---------- history / search panel ----------
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function highlight(text, q){
+  const safe = escapeHtml(text);
+  if(!q) return safe;
+  const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return safe.replace(new RegExp('('+esc+')','ig'), '<mark>$1</mark>');
+}
+function formatWhen(ts){
+  const d = new Date(ts);
+  return d.toLocaleDateString(undefined,{month:'short',day:'numeric'}) + ' · ' + d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+}
+
+$('historyBtn').addEventListener('click', ()=>{
+  $('histOverlay').classList.remove('hidden');
+  $('histSearch').value = '';
+  $('histResults').innerHTML = '<div class="hist-empty">Type to search across everything you\'ve discussed.</div>';
+  setTimeout(()=> $('histSearch').focus(), 50);
+});
+$('histClose').addEventListener('click', ()=> $('histOverlay').classList.add('hidden'));
+$('histOverlay').addEventListener('click', e=>{ if(e.target.id==='histOverlay') $('histOverlay').classList.add('hidden'); });
+
+let histDebounce = null;
+$('histSearch').addEventListener('input', e=>{
+  const q = e.target.value.trim();
+  clearTimeout(histDebounce);
+  if(!q){
+    $('histResults').innerHTML = '<div class="hist-empty">Type to search across everything you\'ve discussed.</div>';
+    return;
+  }
+  histDebounce = setTimeout(async ()=>{
+    try{
+      const results = await api('/api/search?q=' + encodeURIComponent(q));
+      if(!results.length){
+        $('histResults').innerHTML = '<div class="hist-empty">No matches for "'+escapeHtml(q)+'".</div>';
+        return;
+      }
+      $('histResults').innerHTML = results.map(r => `
+        <div class="hist-item">
+          <div class="hist-meta"><span class="${r.role==='user'?'role-user':'role-aria'}">${r.role==='user'?'YOU':'KOWALSKI'}</span><span>${formatWhen(r.created_at)}</span></div>
+          <div class="hist-text">${highlight(r.content, q)}</div>
+        </div>
+      `).join('');
+    }catch(err){
+      $('histResults').innerHTML = '<div class="hist-empty">Search failed \u2014 is the server running?</div>';
+    }
+  }, 250);
+});
 
 // ---------- boot ----------
 async function boot(){

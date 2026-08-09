@@ -10,17 +10,17 @@ app.use(express.json());
 
 const APP_PASSWORD = process.env.APP_PASSWORD || '';
 
-// Tell the frontend whether a password is required (so it can prompt).
-app.get('/api/config', (req, res) => {
-  res.json({ passwordRequired: !!APP_PASSWORD });
-});
-
 // Simple shared-password gate (optional). If APP_PASSWORD is set, every
 // /api request must send it in the x-app-password header.
 app.use('/api', (req, res, next) => {
   if (!APP_PASSWORD) return next();
   if (req.headers['x-app-password'] === APP_PASSWORD) return next();
   return res.status(401).json({ error: 'unauthorized' });
+});
+
+// Tell the frontend whether a password is required (so it can prompt).
+app.get('/api/config', (req, res) => {
+  res.json({ passwordRequired: !!APP_PASSWORD });
 });
 
 // Chat with the agent
@@ -43,7 +43,19 @@ app.get('/api/summary', (req, res) => {
 
 // Conversation history for rehydrating the chat window on load
 app.get('/api/history', (req, res) => {
-  res.json(db.getHistoryForDisplay());
+  res.json(db.getHistoryForDisplay(Number(req.query.limit) || 100));
+});
+
+// Older messages, for "load more" scrolling further back
+app.get('/api/history/before/:id', (req, res) => {
+  res.json(db.getHistoryBefore(Number(req.params.id), Number(req.query.limit) || 50));
+});
+
+// Search across all stored conversation history
+app.get('/api/search', (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.json([]);
+  res.json(db.searchHistory(q, Number(req.query.limit) || 50));
 });
 
 // Recent entries for the log table

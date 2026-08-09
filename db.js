@@ -96,22 +96,43 @@ function setGoal(goalType, goalNumber) {
 }
 
 // ---- Conversation memory ----
+// Every message is kept forever (for browsing/search). Only a recent
+// window is ever sent to Claude as context, so token cost doesn't grow
+// as history accumulates.
+
+const CONTEXT_WINDOW = 30; // messages sent to Claude as conversation context
 
 function appendMessage(role, content) {
   db.prepare('INSERT INTO conversation (role, content, created_at) VALUES (?, ?, ?)')
     .run(role, content, Date.now());
-  const rows = db.prepare('SELECT id FROM conversation ORDER BY id DESC LIMIT 1000').all();
-  if (rows.length > 60) {
-    db.prepare('DELETE FROM conversation WHERE id < ?').run(rows[59].id);
-  }
 }
 
+// Recent window for the agent's own context (not for display).
 function getHistory() {
-  return db.prepare('SELECT role, content FROM conversation ORDER BY id ASC').all();
+  const rows = db.prepare('SELECT role, content FROM conversation ORDER BY id DESC LIMIT ?').all(CONTEXT_WINDOW);
+  return rows.reverse();
 }
 
+// Most recent messages for the chat window on page load, oldest-first.
 function getHistoryForDisplay(limit = 100) {
-  return db.prepare('SELECT role, content, created_at FROM conversation ORDER BY id ASC LIMIT ?').all(limit);
+  const rows = db.prepare('SELECT id, role, content, created_at FROM conversation ORDER BY id DESC LIMIT ?').all(limit);
+  return rows.reverse();
+}
+
+// Older messages for "load more" style pagination, oldest-first within the page.
+function getHistoryBefore(beforeId, limit = 50) {
+  const rows = db.prepare('SELECT id, role, content, created_at FROM conversation WHERE id < ? ORDER BY id DESC LIMIT ?').all(beforeId, limit);
+  return rows.reverse();
+}
+
+// Full-text-ish search across all stored messages, newest match first.
+function searchHistory(query, limit = 50) {
+  const like = '%' + query.replace(/[%_]/g, c => '\\' + c) + '%';
+  return db.prepare(`
+    SELECT id, role, content, created_at FROM conversation
+    WHERE content LIKE ? ESCAPE '\\'
+    ORDER BY id DESC LIMIT ?
+  `).all(like, limit);
 }
 
 function clearConversation() {
@@ -128,5 +149,5 @@ module.exports = {
   todayISO,
   addActivity, correctEntry, deleteEntry, getRecentEntries, getMonthEntries,
   getSettings, setGoal,
-  appendMessage, getHistory, getHistoryForDisplay, clearConversation, clearAll,
+  appendMessage, getHistory, getHistoryForDisplay, getHistoryBefore, searchHistory, clearConversation, clearAll,
 };
