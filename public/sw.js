@@ -1,4 +1,4 @@
-// Service worker for Kowalski's push notifications.
+// Service worker for Kawalski's push notifications.
 // This runs in the background, separate from the page, so it can receive
 // pushes even when the app tab isn't focused (as long as the browser is
 // running, per standard Web Push behavior).
@@ -12,7 +12,7 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('push', (event) => {
-  let data = { title: 'Kowalski', body: 'You have a reminder.' };
+  let data = { title: 'Kawalski', body: 'You have a reminder.' };
   try {
     if (event.data) data = event.data.json();
   } catch (e) {
@@ -28,7 +28,7 @@ self.addEventListener('push', (event) => {
     data: { url: data.url || '/' },
   };
 
-  event.waitUntil(self.registration.showNotification(data.title || 'Kowalski', options));
+  event.waitUntil(self.registration.showNotification(data.title || 'Kawalski', options));
 });
 
 self.addEventListener('notificationclick', (event) => {

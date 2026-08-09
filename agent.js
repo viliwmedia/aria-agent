@@ -13,7 +13,7 @@ function systemPrompt() {
   const now = new Date();
   const nowStr = now.toLocaleString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 
-  return `You are Kowalski, the user's personal AI assistant and right hand. You run 24/7 and they talk to you through a web app \u2014 sometimes by voice, sometimes by typing. You are their daily go-to for anything: sales and marketing strategy, writing and brainstorming, research, quick questions, planning, advice, thinking out loud. You also happen to track their appointment-setting performance and manage their calendar of events, so their real numbers and schedule are always at your fingertips when they're relevant.
+  return `You are Kawalski, the user's personal AI assistant and right hand. You run 24/7 and they talk to you through a web app \u2014 sometimes by voice, sometimes by typing. You are their daily go-to for anything: sales and marketing strategy, writing and brainstorming, research, quick questions, planning, advice, thinking out loud. You also happen to track their appointment-setting performance and manage their calendar of events, so their real numbers and schedule are always at your fingertips when they're relevant.
 
 You are one seamless assistant with full access to their data \u2014 performance numbers, saved facts, events, and past conversations. Don't act like a narrow tracking bot, and don't make them repeat things you can look up yourself. If they ask about marketing, help with marketing. If they ask a general question, just answer it well. If they want to talk through a deal, do that.
 
@@ -35,12 +35,44 @@ TOOLS \u2014 use them proactively when relevant, otherwise just talk normally:
 The current date and time is ${nowStr}.${knowledgeBlock}`;
 }
 
-async function handleMessage(userText) {
-  db.appendMessage('user', userText);
+// Builds the Anthropic content-block array for the current user turn,
+// mixing in any attached images alongside the text.
+function buildUserContent(text, images) {
+  const content = [];
+  if (images && images.length) {
+    for (const img of images) {
+      content.push({ type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } });
+    }
+  }
+  content.push({ type: 'text', text: text && text.trim() ? text : '(see attached image)' });
+  return content;
+}
+
+// onToken, if provided, is called with each text delta as Claude generates
+// it, so the caller can stream partial output to the client immediately
+// instead of waiting for the whole reply \u2014 this is what makes replies feel
+// fast: the first sentence can be shown/spoken while later ones are still
+// being generated. Tool-use rounds still complete in full before the next
+// round starts (a tool call can't run on a partial JSON input), but any
+// text Claude produces alongside or after tool calls streams immediately.
+async function handleMessage(userText, images, onToken) {
+  const imageNote = images && images.length ? ' [image attached]' : '';
+  // Persist a small inline preview (first image only, to keep the row light)
+  // so refreshing the page still shows what was attached.
+  const previewImage = images && images[0] ? `data:${images[0].media_type};base64,${images[0].data}` : null;
+  db.appendMessage('user', userText + imageNote, previewImage);
+
   let messages = db.getHistory().map(m => ({ role: m.role, content: m.content }));
+  // Swap in the real multimodal content for the message we just sent, this
+  // request only \u2014 older turns stay text-only in context to control cost.
+  if (images && images.length) {
+    messages[messages.length - 1] = { role: 'user', content: buildUserContent(userText, images) };
+  }
+
+  let fullReplyText = '';
 
   for (let round = 0; round < 6; round++) {
-    const response = await anthropic.messages.create({
+    const stream = anthropic.messages.stream({
       model: MODEL,
       max_tokens: 1200,
       system: systemPrompt(),
@@ -52,6 +84,16 @@ async function handleMessage(userText) {
       ],
       messages,
     });
+
+    if (onToken) {
+      stream.on('text', (delta) => { fullReplyText += delta; onToken(delta); });
+    }
+
+    const response = await stream.finalMessage();
+    if (!onToken) {
+      // Non-streaming callers (if any): accumulate this round's text directly.
+      fullReplyText += response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    }
 
     // Only tool_use blocks are ours to execute. server_tool_use and
     // web_search_tool_result blocks are handled by the API itself and come
@@ -66,7 +108,7 @@ async function handleMessage(userText) {
     }
 
     if (toolUseBlocks.length === 0) {
-      const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+      const text = fullReplyText.trim();
       db.appendMessage('assistant', text);
       return text;
     }
@@ -86,6 +128,7 @@ async function handleMessage(userText) {
 
   const fallback = "I got tangled chaining that together. Try asking me one thing at a time.";
   db.appendMessage('assistant', fallback);
+  if (onToken) onToken(fallback);
   return fallback;
 }
 

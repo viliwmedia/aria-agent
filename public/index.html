@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KOWALSKI · Performance Agent</title>
+<title>KAWALSKI · Performance Agent</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -95,6 +95,12 @@
   .icon-btn.mic.listening{ background:var(--red); border-color:var(--red); color:#fff; animation:micpulse 1s infinite; }
   .icon-btn.mic.handsfree{ border-color:var(--cyan); color:var(--cyan); box-shadow:0 0 10px var(--cyan-glow); }
   .icon-btn.mic.handsfree.listening{ background:var(--red); border-color:var(--red); color:#fff; }
+  .attach-preview{ display:flex; gap:8px; padding:8px 16px; flex-wrap:wrap; }
+  .attach-preview.hidden{ display:none; }
+  .attach-thumb{ position:relative; width:52px; height:52px; border-radius:6px; overflow:hidden; border:1px solid var(--border-bright); }
+  .attach-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .attach-thumb .rm{ position:absolute; top:1px; right:1px; width:16px; height:16px; background:rgba(0,0,0,0.7); color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; cursor:pointer; line-height:1; }
+  .msg-image{ display:block; max-width:220px; max-height:220px; border-radius:8px; margin-bottom:6px; object-fit:cover; }
   .handsfree-badge{ font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--cyan); text-align:center; padding:6px; text-transform:uppercase; animation:pulse-dot 2s ease-in-out infinite; }
   @keyframes micpulse{ 0%,100%{box-shadow:0 0 0 0 rgba(255,92,92,0.5);} 50%{box-shadow:0 0 0 8px rgba(255,92,92,0);} }
 
@@ -208,11 +214,11 @@
       <span class="hist-close" id="knowClose">✕</span>
     </div>
     <div class="know-add">
-      <textarea id="knowInput" class="know-textarea" rows="2" placeholder="Add anything Kowalski should always know \u2014 commission rate, product details, targets, context..."></textarea>
+      <textarea id="knowInput" class="know-textarea" rows="2" placeholder="Add anything Kawalski should always know \u2014 commission rate, product details, targets, context..."></textarea>
       <button class="btn" id="knowAddBtn" style="margin-top:8px;">ADD TO KNOWLEDGE BASE</button>
     </div>
     <div class="hist-results" id="knowResults">
-      <div class="hist-empty">Nothing saved yet. Add a fact above, or just tell Kowalski something worth remembering in chat.</div>
+      <div class="hist-empty">Nothing saved yet. Add a fact above, or just tell Kawalski something worth remembering in chat.</div>
     </div>
   </div>
 </div>
@@ -236,7 +242,7 @@
       <button class="btn" id="evAddBtn" style="margin-top:8px;">ADD EVENT</button>
     </div>
     <div class="hist-results" id="eventsResults">
-      <div class="hist-empty">Nothing scheduled. Add one above, or just tell Kowalski to plan something.</div>
+      <div class="hist-empty">Nothing scheduled. Add one above, or just tell Kawalski to plan something.</div>
     </div>
   </div>
 </div>
@@ -246,7 +252,7 @@
     <div class="brand">
       <div class="orb" id="orb"></div>
       <div>
-        <div class="brand-text">KOWALSKI</div>
+        <div class="brand-text">KAWALSKI</div>
         <div class="brand-sub">PERSONAL AGENT</div>
       </div>
     </div>
@@ -273,12 +279,17 @@
         </span>
       </div>
       <div class="messages" id="messages"></div>
+      <div class="attach-preview hidden" id="attachPreview"></div>
       <div class="handsfree-badge hidden" id="handsFreeBadge">🔴 LIVE CONVERSATION \u2014 tap the mic to stop</div>
       <div class="composer">
+        <button class="icon-btn attach" id="attachBtn" title="Attach an image">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        </button>
+        <input type="file" id="fileInput" accept="image/*" multiple style="display:none">
         <button class="icon-btn mic" id="micBtn" title="Tap to start a hands-free conversation">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
-        <textarea id="input" rows="1" placeholder="Ask Kowalski anything, or log your numbers..."></textarea>
+        <textarea id="input" rows="1" placeholder="Ask Kawalski anything, or log your numbers..."></textarea>
         <button class="icon-btn send" id="sendBtn" title="Send">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
@@ -436,30 +447,59 @@ function pickVoice(){
   return v;
 }
 
-function speak(text){
-  if(!narrationOn || !window.speechSynthesis) return false;
-  window.speechSynthesis.cancel();
+let pendingUtterances = 0;
+// Queues one utterance without cancelling anything already queued \u2014 used
+// during a streaming reply so each finished sentence can start speaking
+// immediately while later sentences are still being generated, rather than
+// waiting for the whole reply before saying anything.
+function queueSpeech(text){
+  if(!narrationOn || !window.speechSynthesis || !text || !text.trim()) return false;
   const u = new SpeechSynthesisUtterance(text);
   const pref = pickVoice();
   if(pref) u.voice = pref;
   // Slightly measured pace and a touch lower pitch reads as more composed /
   // "briefing" in tone rather than chipper assistant-speak.
   u.rate = 0.98; u.pitch = 0.92;
+  pendingUtterances++;
   u.onstart = ()=> $('orb').classList.add('speaking');
-  u.onend = ()=> { $('orb').classList.remove('speaking'); resumeHandsFreeIfActive(); };
+  u.onend = ()=>{
+    pendingUtterances = Math.max(0, pendingUtterances - 1);
+    if(pendingUtterances === 0){ $('orb').classList.remove('speaking'); resumeHandsFreeIfActive(); }
+  };
   window.speechSynthesis.speak(u);
   return true;
 }
+// One-off utterance for use outside the streaming reply flow (e.g. the
+// voice-picker test line) \u2014 clears anything pending first.
+function speak(text){
+  if(window.speechSynthesis) window.speechSynthesis.cancel();
+  pendingUtterances = 0;
+  return queueSpeech(text);
+}
 
 // ---------- chat rendering ----------
-function addMessage(role, text){
+// Returns {el, textNode} so callers can live-update the text as a
+// streamed reply arrives, via updateMessageText().
+function addMessage(role, text, imageDataUri){
   const el = document.createElement('div');
   el.className = 'msg ' + (role === 'user' ? 'user' : 'aria');
   if(role !== 'user'){
-    const who = document.createElement('span'); who.className='who'; who.textContent='KOWALSKI'; el.appendChild(who);
+    const who = document.createElement('span'); who.className='who'; who.textContent='KAWALSKI'; el.appendChild(who);
   }
-  el.appendChild(document.createTextNode(text));
+  if(imageDataUri){
+    const img = document.createElement('img');
+    img.className = 'msg-image'; img.src = imageDataUri;
+    el.appendChild(img);
+  }
+  const textNode = document.createTextNode(text || '');
+  el.appendChild(textNode);
   $('messages').appendChild(el);
+  $('messages').scrollTop = $('messages').scrollHeight;
+  return { el, textNode };
+}
+function updateMessageText(ref, fullText){
+  if(!ref) return;
+  ref.textNode.textContent = fullText;
   $('messages').scrollTop = $('messages').scrollHeight;
 }
 function showTyping(){
@@ -469,27 +509,121 @@ function showTyping(){
 }
 function hideTyping(){ const t=$('typingIndicator'); if(t) t.remove(); }
 
+// ---------- image attachments ----------
+const MAX_ATTACH = 4;
+const MAX_ATTACH_BYTES = 6 * 1024 * 1024; // 6MB per file, before base64 inflation
+let pendingImages = []; // { media_type, data (base64, no prefix) }
+
+function renderAttachPreview(){
+  const wrap = $('attachPreview');
+  if(pendingImages.length === 0){ wrap.classList.add('hidden'); wrap.innerHTML=''; return; }
+  wrap.classList.remove('hidden');
+  wrap.innerHTML = pendingImages.map((img,i) => `
+    <div class="attach-thumb">
+      <img src="data:${img.media_type};base64,${img.data}">
+      <div class="rm" data-i="${i}">✕</div>
+    </div>
+  `).join('');
+  wrap.querySelectorAll('.rm').forEach(el=>{
+    el.addEventListener('click', ()=>{ pendingImages.splice(Number(el.dataset.i),1); renderAttachPreview(); });
+  });
+}
+function fileToImagePart(file){
+  return new Promise((resolve,reject)=>{
+    if(file.size > MAX_ATTACH_BYTES){ reject(new Error(file.name+' is too large (max 6MB)')); return; }
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      const [, mediaType, data] = reader.result.match(/^data:(.+);base64,(.*)$/) || [];
+      if(!data){ reject(new Error('could not read '+file.name)); return; }
+      resolve({ media_type: mediaType, data });
+    };
+    reader.onerror = ()=> reject(new Error('could not read '+file.name));
+    reader.readAsDataURL(file);
+  });
+}
+$('attachBtn').addEventListener('click', ()=> $('fileInput').click());
+$('fileInput').addEventListener('change', async (e)=>{
+  const files = Array.from(e.target.files || []).slice(0, MAX_ATTACH - pendingImages.length);
+  for(const file of files){
+    try{ pendingImages.push(await fileToImagePart(file)); }
+    catch(err){ addMessage('aria', err.message); }
+  }
+  renderAttachPreview();
+  e.target.value = '';
+});
+
 // ---------- send ----------
 let sending = false;
 async function send(text){
   if(sending) return;
   text = (text || $('input').value).trim();
-  if(!text) return;
+  const images = pendingImages;
+  if(!text && images.length===0) return;
   sending = true;
   $('input').value=''; autosize();
-  addMessage('user', text);
+  const previewUri = images[0] ? `data:${images[0].media_type};base64,${images[0].data}` : null;
+  addMessage('user', text || '(image)', previewUri);
+  pendingImages = []; renderAttachPreview();
   showTyping();
-  try{
-    const data = await api('/api/chat', { method:'POST', body: JSON.stringify({ message:text }) });
-    hideTyping();
-    if(data.reply){
-      addMessage('aria', data.reply);
-      const spoke = speak(data.reply);
-      if(!spoke) resumeHandsFreeIfActive(); // narration off / unsupported: resume immediately instead of waiting on TTS onend
-    } else {
-      resumeHandsFreeIfActive();
+
+  if(window.speechSynthesis) window.speechSynthesis.cancel();
+  pendingUtterances = 0;
+
+  let bubbleRef = null;
+  let fullText = '';
+  let sentenceBuf = '';
+  let sawText = false;
+
+  function onDelta(delta){
+    if(!sawText){ hideTyping(); bubbleRef = addMessage('aria', ''); sawText = true; }
+    fullText += delta;
+    updateMessageText(bubbleRef, fullText);
+    sentenceBuf += delta;
+    // Speak each complete sentence as soon as it's finished, instead of
+    // waiting for the whole reply \u2014 this is what makes Kawalski feel fast:
+    // you start hearing sentence one while sentence three is still generating.
+    const parts = sentenceBuf.split(/(?<=[.!?])\s+/);
+    if(parts.length > 1){
+      for(let i=0;i<parts.length-1;i++) queueSpeech(parts[i]);
+      sentenceBuf = parts[parts.length-1];
     }
-    if(data.summary) renderDash(data.summary);
+  }
+
+  try{
+    const headers = Object.assign({'Content-Type':'application/json'}, PASSWORD ? {'x-app-password':PASSWORD} : {});
+    const res = await fetch('/api/chat', { method:'POST', headers, body: JSON.stringify({ message:text, images }) });
+    if(res.status === 401) throw new Error('unauthorized');
+    if(!res.ok || !res.body) throw new Error('request failed');
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let summary = null;
+    let streamErr = null;
+
+    while(true){
+      const {done, value} = await reader.read();
+      if(done) break;
+      buf += decoder.decode(value, {stream:true});
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for(const line of lines){
+        if(!line.trim()) continue;
+        let evt; try{ evt = JSON.parse(line); }catch(e){ continue; }
+        if(evt.type === 'text') onDelta(evt.delta);
+        else if(evt.type === 'done') summary = evt.summary;
+        else if(evt.type === 'error') streamErr = evt.message;
+      }
+    }
+    if(buf.trim()){
+      try{ const evt = JSON.parse(buf); if(evt.type==='text') onDelta(evt.delta); else if(evt.type==='done') summary=evt.summary; else if(evt.type==='error') streamErr=evt.message; }catch(e){}
+    }
+
+    hideTyping();
+    if(streamErr) throw new Error(streamErr);
+    if(sentenceBuf.trim()) queueSpeech(sentenceBuf);
+    if(pendingUtterances === 0) resumeHandsFreeIfActive(); // narration off, or nothing was queued
+    if(summary) renderDash(summary);
   }catch(err){
     hideTyping();
     addMessage('aria', err.message==='unauthorized' ? 'Session expired. Refresh and re-enter your password.' : 'Connection issue — is the server running?');
@@ -505,7 +639,7 @@ $('input').addEventListener('input', autosize);
 
 // ---------- voice input (Web Speech API) ----------
 // Hands-free mode: one tap turns on a continuous back-and-forth loop.
-// Kowalski listens, sends what you said, speaks the reply, then
+// Kawalski listens, sends what you said, speaks the reply, then
 // automatically starts listening again \u2014 no need to tap the mic each turn.
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recog = null, listening = false, handsFree = false;
@@ -532,22 +666,35 @@ function resumeHandsFreeIfActive(){
 
 if(SR){
   recog = new SR();
-  recog.lang = 'en-US'; recog.interimResults = true; recog.continuous = false;
+  recog.lang = 'en-US'; recog.interimResults = true;
+  // continuous:true stops the browser's own (short, ~1-2s) auto-cutoff from
+  // ending the session mid-sentence. Instead we control the pause ourselves
+  // below with a 2-second silence timer, reset on every new word detected.
+  recog.continuous = true;
+  const SILENCE_MS = 2000;
+  let silenceTimer = null;
+
   recog.onresult = e=>{
     let interim=''; let finalText='';
-    for(let i=e.resultIndex;i<e.results.length;i++){
+    for(let i=0;i<e.results.length;i++){
       if(e.results[i].isFinal) finalText += e.results[i][0].transcript;
       else interim += e.results[i][0].transcript;
     }
     $('input').value = (finalText || interim); autosize();
+    // Any new speech (interim or final) resets the pause clock \u2014 the user
+    // only gets cut off after a genuine 2-second gap, not mid-thought.
+    clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(()=>{ if(listening){ try{ recog.stop(); }catch(e){} } }, SILENCE_MS);
   };
   recog.onend = ()=>{
+    clearTimeout(silenceTimer);
     listening=false; $('micBtn').classList.remove('listening');
     const text = $('input').value.trim();
     if(text){ send(); }
     else if(handsFree){ setTimeout(()=>{ if(handsFree) startListening(); }, 500); }
   };
   recog.onerror = (e)=>{
+    clearTimeout(silenceTimer);
     listening=false; $('micBtn').classList.remove('listening');
     if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
       handsFree = false; updateHandsFreeUI();
@@ -709,7 +856,8 @@ $('histSearch').addEventListener('input', e=>{
       }
       $('histResults').innerHTML = results.map(r => `
         <div class="hist-item">
-          <div class="hist-meta"><span class="${r.role==='user'?'role-user':'role-aria'}">${r.role==='user'?'YOU':'KOWALSKI'}</span><span>${formatWhen(r.created_at)}</span></div>
+          <div class="hist-meta"><span class="${r.role==='user'?'role-user':'role-aria'}">${r.role==='user'?'YOU':'KAWALSKI'}</span><span>${formatWhen(r.created_at)}</span></div>
+          ${r.image_data ? `<img src="${r.image_data}" class="msg-image" style="max-width:120px; max-height:120px;">` : ''}
           <div class="hist-text">${highlight(r.content, q)}</div>
         </div>
       `).join('');
@@ -724,7 +872,7 @@ async function loadKnowledge(){
   try{
     const notes = await api('/api/notes');
     if(!notes.length){
-      $('knowResults').innerHTML = '<div class="hist-empty">Nothing saved yet. Add a fact above, or just tell Kowalski something worth remembering in chat.</div>';
+      $('knowResults').innerHTML = '<div class="hist-empty">Nothing saved yet. Add a fact above, or just tell Kawalski something worth remembering in chat.</div>';
       return;
     }
     $('knowResults').innerHTML = notes.map(n => `
@@ -771,7 +919,7 @@ async function loadEvents(){
   try{
     const events = await api('/api/events');
     if(!events.length){
-      $('eventsResults').innerHTML = '<div class="hist-empty">Nothing scheduled. Add one above, or just tell Kowalski to plan something.</div>';
+      $('eventsResults').innerHTML = '<div class="hist-empty">Nothing scheduled. Add one above, or just tell Kawalski to plan something.</div>';
       return;
     }
     $('eventsResults').innerHTML = events.map(e => `
@@ -911,7 +1059,7 @@ async function start(){
     if(hist.length===0){
       addMessage('aria', "Online. Ask me anything \u2014 sales, marketing, research, writing, whatever's on your plate. I also track your numbers, so tell me what you did today or ask how you're pacing. Set a monthly goal whenever you're ready.");
     } else {
-      hist.forEach(m => addMessage(m.role==='user'?'user':'aria', m.content));
+      hist.forEach(m => addMessage(m.role==='user'?'user':'aria', m.content, m.image_data || null));
     }
   }catch(e){ addMessage('aria', 'Online, but I could not load history — is the server running?'); }
   // load dashboard

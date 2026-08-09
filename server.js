@@ -7,13 +7,13 @@ const agent = require('./agent');
 const tools = require('./tools');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '15mb' })); // raised so base64 image attachments aren't rejected
 
 const APP_PASSWORD = process.env.APP_PASSWORD || '';
 
 // Push notifications are optional: they only work once VAPID keys are set.
 // See README for how to generate them. Without keys, events/reminders still
-// save and Kowalski can still talk about them \u2014 they just won't push an
+// save and Kawalski can still talk about them \u2014 they just won't push an
 // actual notification to the device.
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
@@ -40,16 +40,30 @@ app.use('/api', (req, res, next) => {
   return res.status(401).json({ error: 'unauthorized' });
 });
 
-// Chat with the agent
+// Chat with the agent. Streams the reply back as newline-delimited JSON
+// chunks ({"type":"text","delta":"..."}) as Claude generates them, so the
+// UI can show/speak the first sentence while later ones are still being
+// written, instead of waiting for the entire reply before showing anything.
 app.post('/api/chat', async (req, res) => {
   const text = (req.body && req.body.message || '').trim();
-  if (!text) return res.status(400).json({ error: 'empty message' });
+  const images = Array.isArray(req.body && req.body.images) ? req.body.images : [];
+  if (!text && images.length === 0) return res.status(400).json({ error: 'empty message' });
+
+  res.setHeader('Content-Type', 'application/x-ndjson');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Accel-Buffering', 'no'); // ask proxies not to buffer, so chunks flush immediately
+  if (res.flushHeaders) res.flushHeaders();
+
   try {
-    const reply = await agent.handleMessage(text);
-    res.json({ reply, summary: tools.buildSummary() });
+    await agent.handleMessage(text, images, (delta) => {
+      res.write(JSON.stringify({ type: 'text', delta }) + '\n');
+    });
+    res.write(JSON.stringify({ type: 'done', summary: tools.buildSummary() }) + '\n');
   } catch (err) {
     console.error('chat error:', err);
-    res.status(500).json({ error: 'agent failed', detail: String(err && err.message) });
+    res.write(JSON.stringify({ type: 'error', message: String(err && err.message) }) + '\n');
+  } finally {
+    res.end();
   }
 });
 
@@ -101,7 +115,7 @@ app.post('/api/goal', (req, res) => {
   res.json({ settings, summary: tools.buildSummary() });
 });
 
-// Knowledge base: freeform facts Kowalski always knows
+// Knowledge base: freeform facts Kawalski always knows
 app.get('/api/notes', (req, res) => {
   res.json(db.getNotes(Number(req.query.limit) || 200));
 });
@@ -185,7 +199,7 @@ app.post('/api/push/test', async (req, res) => {
   if (!PUSH_ENABLED) return res.status(400).json({ error: 'push not configured on the server' });
   const subs = db.getSubscriptions();
   if (subs.length === 0) return res.status(400).json({ error: 'no subscriptions on file yet' });
-  const payload = JSON.stringify({ title: 'Kowalski', body: "This is a test \u2014 notifications are working." });
+  const payload = JSON.stringify({ title: 'Kawalski', body: "This is a test \u2014 notifications are working." });
   let sent = 0;
   for (const sub of subs) {
     try { await webpush.sendNotification(sub, payload); sent++; }
@@ -203,7 +217,7 @@ async function checkDueReminders() {
   const subs = db.getSubscriptions();
   for (const event of due) {
     const payload = JSON.stringify({
-      title: 'Kowalski \u00b7 Reminder',
+      title: 'Kawalski \u00b7 Reminder',
       body: event.title + (event.notes ? ' \u2014 ' + event.notes : ''),
     });
     for (const sub of subs) {
@@ -222,9 +236,12 @@ setInterval(() => { checkDueReminders().catch(err => console.error('reminder che
 app.use(express.static(path.join(__dirname, 'public')));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn('WARNING: ANTHROPIC_API_KEY is not set. The chat agent will fail until you set it.');
-  }
-  console.log(`Setter HUD running on port ${PORT}`);
-});
+(async () => {
+  await db.initDb(); // Initialize SQL.js database
+  app.listen(PORT, () => {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.warn('WARNING: ANTHROPIC_API_KEY is not set. The chat agent will fail until you set it.');
+    }
+    console.log(`Setter HUD running on port ${PORT}`);
+  });
+})();

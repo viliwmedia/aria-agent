@@ -1,6 +1,6 @@
-# Kowalski · Personal Agent + Setter HUD
+# Kawalski · Personal Agent + Setter HUD
 
-A voice-enabled, JARVIS-style web app with Kowalski — your general-purpose
+A voice-enabled, JARVIS-style web app with Kawalski — your general-purpose
 daily assistant. Ask him anything: sales and marketing strategy, research,
 writing, brainstorming, quick questions, planning. He also tracks your
 appointment-setting performance, coaches you to your monthly goal (including
@@ -12,17 +12,17 @@ phone, desktop, anywhere.
 
 ## What's in the box
 
-- **General assistant (Kowalski)** — powered by the Claude API, with full
+- **General assistant (Kawalski)** — powered by the Claude API, with full
   memory across sessions. One seamless assistant for anything you need day
   to day, who also happens to know your performance numbers cold.
-- **Full data access** — Kowalski can read and write everything himself:
+- **Full data access** — Kawalski can read and write everything himself:
   log and correct activity, set goals, save facts, plan events, and search
   every past conversation you've ever had with him. You rarely need to touch
   the dashboard directly.
-- **Web search** — Kowalski can look up current info (news, prices, live
+- **Web search** — Kawalski can look up current info (news, prices, live
   research, recent facts) and answer with sources.
 - **Income goals** — set a monthly dollar target and your revenue per close,
-  and Kowalski back-calculates the full activity ladder (required closes,
+  and Kawalski back-calculates the full activity ladder (required closes,
   shows, appointments, and dials per day) from your real conversion rates.
 - **Events & push reminders** — tell him to remind you of something and he
   resolves the time and saves it. With VAPID keys configured (see below), he
@@ -62,7 +62,7 @@ to it and see your numbers.
 
 ### Push notifications (optional, for event reminders)
 
-Kowalski can create events and remind you at the right time via a real push
+Kawalski can create events and remind you at the right time via a real push
 notification, even if the app tab isn't open. This needs two keys:
 
 ```
@@ -77,7 +77,7 @@ VAPID_PUBLIC_KEY=...
 VAPID_PRIVATE_KEY=...
 ```
 
-Without these set, events still save and Kowalski can still talk about
+Without these set, events still save and Kawalski can still talk about
 your schedule — you just won't get an actual push notification when the
 time comes. Once the keys are set and the app is deployed over HTTPS, open
 the **EVENTS** panel in the app and tap **Enable Notifications** on each
@@ -92,7 +92,7 @@ npm start
 ```
 
 Open http://localhost:3000. Set a goal (top-right EDIT on the goal panel, or
-just tell Kowalski), then start logging.
+just tell Kawalski), then start logging.
 
 Note: browsers only allow microphone access on `localhost` or over HTTPS. On
 localhost you're fine; once deployed, make sure it's served over HTTPS (the
@@ -121,7 +121,7 @@ env vars with `fly secrets set`, then `fly deploy`.
 Once deployed, bookmark the URL on your phone's home screen and it behaves
 like an app.
 
-## Talking to Kowalski
+## Talking to Kawalski
 
 By voice (tap the mic once for a hands-free back-and-forth — he keeps
 listening after each reply, no need to tap again between turns) or text.
@@ -150,11 +150,11 @@ Anything else — he's your general assistant:
 > "brainstorm a promo idea for this month"
 > "explain how a marketing funnel should feed my setting pipeline"
 
-## Customizing Kowalski's personality
+## Customizing Kawalski's personality
 
 The entire personality lives in the `systemPrompt()` function in `agent.js`.
-Edit it to make Kowalski blunter, warmer, funnier — whatever fits how you want
-to be coached. You can also rename Kowalski there.
+Edit it to make Kawalski blunter, warmer, funnier — whatever fits how you want
+to be coached. You can also rename Kawalski there.
 
 ## A note on data & privacy
 
