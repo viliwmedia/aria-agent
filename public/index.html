@@ -1,1071 +1,169 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KAWALSKI · Performance Agent</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --bg-void:#04070a;
-    --panel:#0a1218;
-    --panel-2:#0d161d;
-    --border:#16262f;
-    --border-bright:#24404d;
-    --cyan:#4fe3ff;
-    --cyan-dim:#1b4a57;
-    --cyan-glow:rgba(79,227,255,0.35);
-    --amber:#ffb454;
-    --green:#5fefa0;
-    --red:#ff5c5c;
-    --text:#e7f3f7;
-    --text-dim:#5c7a87;
-    --text-faint:#31434c;
-    --mono:'JetBrains Mono', monospace;
-    --sans:'Inter', sans-serif;
-  }
-  *{box-sizing:border-box; margin:0; padding:0;}
-  html,body{ height:100%; }
-  body{
-    background:var(--bg-void);
-    color:var(--text);
-    font-family:var(--sans);
-    background-image:
-      radial-gradient(ellipse 90% 50% at 50% -10%, rgba(79,227,255,0.06), transparent),
-      repeating-linear-gradient(180deg, rgba(255,255,255,0.01) 0px, rgba(255,255,255,0.01) 1px, transparent 1px, transparent 3px);
-    overflow:hidden;
-  }
-  .app{ height:100vh; display:flex; flex-direction:column; padding:14px; gap:12px; }
-
-  /* topbar */
-  .topbar{
-    display:flex; justify-content:space-between; align-items:center;
-    padding:12px 18px; border:1px solid var(--border); border-radius:5px;
-    background:linear-gradient(180deg, var(--panel), var(--panel-2)); position:relative; overflow:hidden; flex-shrink:0;
-  }
-  .topbar::before{ content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg, transparent, var(--cyan), transparent); opacity:0.5; }
-  .brand{ display:flex; align-items:center; gap:11px; }
-  .orb{ width:26px; height:26px; border-radius:50%; position:relative; }
-  .orb::before{ content:''; position:absolute; inset:0; border-radius:50%; background:radial-gradient(circle at 35% 35%, var(--cyan), var(--cyan-dim) 70%); box-shadow:0 0 12px var(--cyan-glow), inset 0 0 6px rgba(0,0,0,0.4); }
-  .orb.speaking::after{ content:''; position:absolute; inset:-6px; border-radius:50%; border:1.5px solid var(--cyan); animation:ripple 1s ease-out infinite; }
-  @keyframes ripple{ from{ transform:scale(0.8); opacity:0.8;} to{ transform:scale(1.6); opacity:0;} }
-  .brand-text{ font-family:var(--mono); font-weight:800; letter-spacing:0.22em; font-size:15px; }
-  .brand-sub{ font-family:var(--mono); font-size:9px; letter-spacing:0.16em; color:var(--text-dim); margin-top:1px; }
-  .topbar-right{ display:flex; align-items:center; gap:16px; }
-  .toggle-wrap{ display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--text-dim); text-transform:uppercase; }
-  .voice-select{ background:var(--panel-2); border:1px solid var(--border-bright); color:var(--text-dim); font-family:var(--mono); font-size:10px; letter-spacing:0.05em; padding:5px 8px; border-radius:4px; outline:none; max-width:170px; }
-  .voice-select:focus{ border-color:var(--cyan); color:var(--text); }
-  .toggle{ width:42px; height:22px; border-radius:12px; background:var(--panel-2); border:1px solid var(--border-bright); position:relative; cursor:pointer; transition:all .2s; }
-  .toggle.on{ background:var(--cyan-dim); border-color:var(--cyan); box-shadow:0 0 8px var(--cyan-glow); }
-  .toggle .knob{ position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:var(--text-dim); transition:all .2s; }
-  .toggle.on .knob{ left:22px; background:var(--cyan); box-shadow:0 0 6px var(--cyan); }
-  .clock{ font-family:var(--mono); font-size:13px; color:var(--cyan); letter-spacing:0.05em; }
-
-  /* main layout */
-  .main{ flex:1; display:grid; grid-template-columns: 1fr 380px; gap:12px; min-height:0; }
-  @media (max-width:900px){ .main{ grid-template-columns:1fr; } .dash{ display:none; } .dash.mobile-show{ display:flex; } }
-
-  /* chat column */
-  .chat-col{ display:flex; flex-direction:column; border:1px solid var(--border); border-radius:5px; background:var(--panel); min-height:0; }
-  .chat-head{ padding:11px 16px; border-bottom:1px solid var(--border); font-family:var(--mono); font-size:10px; letter-spacing:0.14em; color:var(--text-dim); text-transform:uppercase; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
-  .chat-head .mobile-dash-btn{ display:none; cursor:pointer; color:var(--cyan); }
-  @media (max-width:900px){ .chat-head .mobile-dash-btn{ display:inline; } }
-  .messages{ flex:1; overflow-y:auto; padding:18px 16px; display:flex; flex-direction:column; gap:14px; }
-  .messages::-webkit-scrollbar{ width:6px; } .messages::-webkit-scrollbar-thumb{ background:var(--border-bright); border-radius:3px; }
-  .msg{ max-width:82%; padding:11px 14px; border-radius:10px; font-size:14px; line-height:1.5; animation:fadein .25s ease; }
-  @keyframes fadein{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;} }
-  .msg.user{ align-self:flex-end; background:var(--cyan-dim); border:1px solid var(--border-bright); color:var(--text); border-bottom-right-radius:3px; }
-  .msg.aria{ align-self:flex-start; background:var(--panel-2); border:1px solid var(--border); border-bottom-left-radius:3px; }
-  .msg.aria .who{ font-family:var(--mono); font-size:9px; letter-spacing:0.14em; color:var(--cyan); text-transform:uppercase; margin-bottom:5px; display:block; }
-  .typing{ align-self:flex-start; display:flex; gap:4px; padding:12px 14px; }
-  .typing span{ width:6px; height:6px; border-radius:50%; background:var(--cyan); animation:blink 1.2s infinite; }
-  .typing span:nth-child(2){ animation-delay:.2s; } .typing span:nth-child(3){ animation-delay:.4s; }
-  @keyframes blink{ 0%,60%,100%{opacity:.25;} 30%{opacity:1;} }
-
-  /* composer */
-  .composer{ padding:12px; border-top:1px solid var(--border); display:flex; gap:10px; align-items:flex-end; flex-shrink:0; }
-  .composer textarea{ flex:1; resize:none; background:var(--bg-void); border:1px solid var(--border-bright); color:var(--text); padding:11px 13px; border-radius:5px; font-family:var(--sans); font-size:14px; outline:none; max-height:120px; line-height:1.4; }
-  .composer textarea:focus{ border-color:var(--cyan); box-shadow:0 0 0 1px var(--cyan-glow); }
-  .icon-btn{ width:44px; height:44px; border-radius:5px; border:1px solid var(--border-bright); background:var(--panel-2); color:var(--text-dim); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; flex-shrink:0; }
-  .icon-btn:hover{ color:var(--cyan); border-color:var(--cyan); }
-  .icon-btn svg{ width:20px; height:20px; }
-  .icon-btn.send{ background:var(--cyan-dim); border-color:var(--cyan); color:var(--cyan); }
-  .icon-btn.send:hover{ box-shadow:0 0 10px var(--cyan-glow); }
-  .icon-btn.mic.listening{ background:var(--red); border-color:var(--red); color:#fff; animation:micpulse 1s infinite; }
-  .icon-btn.mic.handsfree{ border-color:var(--cyan); color:var(--cyan); box-shadow:0 0 10px var(--cyan-glow); }
-  .icon-btn.mic.handsfree.listening{ background:var(--red); border-color:var(--red); color:#fff; }
-  .attach-preview{ display:flex; gap:8px; padding:8px 16px; flex-wrap:wrap; }
-  .attach-preview.hidden{ display:none; }
-  .attach-thumb{ position:relative; width:52px; height:52px; border-radius:6px; overflow:hidden; border:1px solid var(--border-bright); }
-  .attach-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
-  .attach-thumb .rm{ position:absolute; top:1px; right:1px; width:16px; height:16px; background:rgba(0,0,0,0.7); color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; cursor:pointer; line-height:1; }
-  .msg-image{ display:block; max-width:220px; max-height:220px; border-radius:8px; margin-bottom:6px; object-fit:cover; }
-  .handsfree-badge{ font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--cyan); text-align:center; padding:6px; text-transform:uppercase; animation:pulse-dot 2s ease-in-out infinite; }
-  @keyframes micpulse{ 0%,100%{box-shadow:0 0 0 0 rgba(255,92,92,0.5);} 50%{box-shadow:0 0 0 8px rgba(255,92,92,0);} }
-
-  /* dashboard */
-  .dash{ display:flex; flex-direction:column; gap:12px; overflow-y:auto; min-height:0; padding-right:2px; }
-  .dash::-webkit-scrollbar{ width:6px; } .dash::-webkit-scrollbar-thumb{ background:var(--border-bright); border-radius:3px; }
-  .panel{ border:1px solid var(--border); border-radius:5px; background:var(--panel); padding:16px; flex-shrink:0; }
-  .panel-label{ font-family:var(--mono); font-size:10px; letter-spacing:0.14em; color:var(--text-dim); text-transform:uppercase; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; }
-  .panel-label .edit{ cursor:pointer; color:var(--text-faint); font-size:9px; }
-  .panel-label .edit:hover{ color:var(--cyan); }
-
-  .ring-wrap{ display:flex; flex-direction:column; align-items:center; }
-  .ring-outer{ position:relative; width:172px; height:172px; }
-  .ring-sweep{ position:absolute; inset:-10px; border-radius:50%; background:conic-gradient(from 0deg, transparent 0deg, var(--cyan-glow) 8deg, transparent 22deg); animation:spin 4s linear infinite; opacity:0.45; }
-  @keyframes spin{ to{transform:rotate(360deg);} }
-  .ring-track{ position:absolute; inset:0; border-radius:50%; background:conic-gradient(var(--cyan) calc(var(--pct,0)*1%), var(--border) 0); -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 12px), #000 calc(100% - 11px)); mask:radial-gradient(farthest-side, transparent calc(100% - 12px), #000 calc(100% - 11px)); filter:drop-shadow(0 0 5px var(--cyan-glow)); }
-  .ring-center{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-  .ring-pct{ font-family:var(--mono); font-size:32px; font-weight:700; color:var(--cyan); }
-  .ring-pct span{ font-size:15px; opacity:0.6; }
-  .ring-sub{ font-family:var(--mono); font-size:10px; letter-spacing:0.12em; color:var(--text-dim); margin-top:3px; text-transform:uppercase; }
-  .status-chip{ font-family:var(--mono); font-size:10px; letter-spacing:0.12em; text-transform:uppercase; padding:5px 13px; border-radius:20px; border:1px solid; margin-top:12px; }
-  .status-green{ color:var(--green); border-color:var(--green); background:rgba(95,239,160,0.08);} .status-amber{ color:var(--amber); border-color:var(--amber); background:rgba(255,180,84,0.08);} .status-red{ color:var(--red); border-color:var(--red); background:rgba(255,92,92,0.08);} .status-cyan{ color:var(--cyan); border-color:var(--cyan); background:var(--cyan-glow);}
-
-  .stat-row{ display:flex; justify-content:space-between; align-items:baseline; padding:8px 0; border-bottom:1px solid var(--border); font-family:var(--mono); }
-  .stat-row:last-child{ border-bottom:none; }
-  .stat-label{ font-size:10px; letter-spacing:0.08em; color:var(--text-dim); text-transform:uppercase; }
-  .stat-val{ font-size:14px; color:var(--text); } .stat-val.hi{ color:var(--cyan); }
-
-  .kpi-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  .kpi{ border:1px solid var(--border); border-radius:5px; padding:12px; }
-  .kpi-name{ font-family:var(--mono); font-size:9px; letter-spacing:0.12em; color:var(--text-dim); text-transform:uppercase; }
-  .kpi-val{ font-family:var(--mono); font-size:22px; font-weight:700; margin-top:6px; }
-  .kpi-val small{ font-size:12px; color:var(--text-dim); }
-  .kpi-bar{ height:3px; background:var(--border); border-radius:2px; margin-top:8px; overflow:hidden; }
-  .kpi-fill{ height:100%; background:var(--cyan); box-shadow:0 0 5px var(--cyan-glow); transition:width .6s; }
-
-  /* manual entry / goal forms */
-  .mini-form{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-  .mini-form .field{ display:flex; flex-direction:column; }
-  .mini-form label{ font-family:var(--mono); font-size:9px; letter-spacing:0.08em; color:var(--text-dim); text-transform:uppercase; margin-bottom:4px; }
-  .mini-form input, .mini-form select{ background:var(--bg-void); border:1px solid var(--border-bright); color:var(--text); padding:8px 10px; border-radius:4px; font-family:var(--mono); font-size:13px; outline:none; }
-  .mini-form input:focus, .mini-form select:focus{ border-color:var(--cyan); }
-  .btn{ font-family:var(--mono); letter-spacing:0.1em; font-size:11px; text-transform:uppercase; background:transparent; border:1px solid var(--cyan); color:var(--cyan); padding:9px 14px; border-radius:4px; cursor:pointer; transition:all .15s; }
-  .btn:hover{ background:var(--cyan-glow); box-shadow:0 0 10px var(--cyan-glow); }
-  .btn.full{ width:100%; margin-top:10px; }
-
-  /* password gate */
-  .gate{ position:fixed; inset:0; background:var(--bg-void); display:flex; align-items:center; justify-content:center; z-index:50; }
-  .gate-box{ border:1px solid var(--border-bright); border-radius:6px; background:var(--panel); padding:32px; width:300px; text-align:center; }
-  .gate-box h3{ font-family:var(--mono); font-size:13px; letter-spacing:0.14em; color:var(--cyan); margin-bottom:18px; }
-  .gate-box input{ width:100%; background:var(--bg-void); border:1px solid var(--border-bright); color:var(--text); padding:10px; border-radius:4px; font-family:var(--mono); margin-bottom:12px; outline:none; }
-  .hidden{ display:none !important; }
-  .hint{ font-family:var(--mono); font-size:10px; color:var(--text-faint); margin-top:10px; text-align:center; }
-
-  /* history / search overlay */
-  .hist-overlay{ position:fixed; inset:0; background:rgba(4,7,10,0.75); backdrop-filter:blur(2px); display:flex; align-items:flex-start; justify-content:center; z-index:60; padding:6vh 16px; }
-  .hist-panel{ width:100%; max-width:640px; max-height:82vh; display:flex; flex-direction:column; border:1px solid var(--border-bright); border-radius:6px; background:var(--panel); overflow:hidden; box-shadow:0 0 30px rgba(0,0,0,0.5); }
-  .hist-head{ padding:14px 18px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; font-family:var(--mono); font-size:11px; letter-spacing:0.14em; color:var(--cyan); }
-  .hist-close{ cursor:pointer; color:var(--text-dim); font-size:14px; }
-  .hist-close:hover{ color:var(--red); }
-  .hist-search{ margin:14px 18px 10px; background:var(--bg-void); border:1px solid var(--border-bright); color:var(--text); padding:10px 13px; border-radius:5px; font-family:var(--sans); font-size:14px; outline:none; }
-  .hist-search:focus{ border-color:var(--cyan); box-shadow:0 0 0 1px var(--cyan-glow); }
-  .hist-results{ flex:1; overflow-y:auto; padding:0 18px 18px; display:flex; flex-direction:column; gap:8px; }
-  .hist-results::-webkit-scrollbar{ width:6px; } .hist-results::-webkit-scrollbar-thumb{ background:var(--border-bright); border-radius:3px; }
-  .hist-empty{ font-family:var(--mono); font-size:11px; color:var(--text-faint); text-align:center; padding:30px 10px; letter-spacing:0.05em; }
-  .hist-item{ border:1px solid var(--border); border-radius:5px; padding:10px 12px; cursor:default; }
-  .hist-item .hist-meta{ display:flex; justify-content:space-between; font-family:var(--mono); font-size:9px; letter-spacing:0.08em; color:var(--text-faint); margin-bottom:5px; text-transform:uppercase; }
-  .hist-item .hist-meta .role-user{ color:var(--cyan); }
-  .hist-item .hist-meta .role-aria{ color:var(--green); }
-  .hist-item .hist-text{ font-size:13px; color:var(--text); line-height:1.45; }
-  .hist-text mark{ background:var(--cyan-glow); color:var(--text); border-radius:2px; padding:0 1px; }
-  .know-add{ padding:0 18px 12px; border-bottom:1px solid var(--border); margin-bottom:12px; }
-  .know-textarea{ width:100%; resize:vertical; background:var(--bg-void); border:1px solid var(--border-bright); color:var(--text); padding:10px 12px; border-radius:5px; font-family:var(--sans); font-size:13px; outline:none; }
-  .know-textarea:focus{ border-color:var(--cyan); box-shadow:0 0 0 1px var(--cyan-glow); }
-  .hist-item .know-del{ float:right; cursor:pointer; color:var(--text-faint); font-family:var(--mono); font-size:10px; }
-  .hist-item .know-del:hover{ color:var(--red); }
-  .notif-row{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--border); border-radius:5px; background:var(--bg-void); }
-  .notif-status{ font-family:var(--mono); font-size:10px; letter-spacing:0.06em; color:var(--text-dim); text-transform:uppercase; }
-  .notif-status.on{ color:var(--green); }
-  .notif-status.off{ color:var(--text-faint); }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#000004" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; script-src 'unsafe-inline'; connect-src https://izmxaqcvvwpnvukizbdw.supabase.co; base-uri 'none'; form-action 'none'" />
+  <title>Get Streak</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at top, #121826 0%, #000004 55%);
+      color: #e8edf5;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      text-align: center;
+      padding: 24px;
+    }
+    .card { max-width: 420px; width: 100%; }
+    .logo {
+      width: 148px;
+      height: auto;
+      margin: 0 auto 28px;
+      display: block;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin: 0 0 12px;
+    }
+    p {
+      color: rgba(232,237,245,0.65);
+      line-height: 1.5;
+      margin: 0 0 28px;
+      font-size: 15px;
+    }
+    .cta {
+      display: inline-block;
+      width: 100%;
+      padding: 16px 20px;
+      border-radius: 16px;
+      background: #c8d8f0;
+      color: #04060c;
+      font-weight: 800;
+      text-decoration: none;
+      margin-bottom: 12px;
+    }
+    .secondary {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 20px;
+      border-radius: 16px;
+      border: 1px solid rgba(200,216,240,0.25);
+      color: #c8d8f0;
+      font-weight: 700;
+      text-decoration: none;
+      margin-bottom: 18px;
+    }
+    .hint { font-size: 12px; color: #6b7a94; line-height: 1.45; }
+  </style>
 </head>
 <body>
+  <main class="card">
+    <img class="logo" src="/streak-logo-white.png" alt="Streak" width="148" height="40" />
+    <h1 id="title">Start your recovery</h1>
+    <p id="body">Download Streak and continue on your phone.</p>
+    <a class="cta" id="storeBtn" href="https://apps.apple.com/app/id6782550146">Download on the App Store</a>
+    <a class="secondary" id="openAppBtn" href="streak://ref" hidden>Open Streak app</a>
+    <p class="hint" id="hint">Open this page on your phone to download Streak.</p>
+  </main>
+  <script>
+    (function () {
+      var SUPABASE_URL = 'https://izmxaqcvvwpnvukizbdw.supabase.co';
+      var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml6bXhhcWN2dndwbnZ1a2l6YmR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzOTA1OTAsImV4cCI6MjA5NTk2NjU5MH0.AhMiKf3WLjBGqREMfrFikaSEn9kfynrWSg84FfBApwI';
+      var STORE = 'https://apps.apple.com/app/id6782550146';
 
-<div class="gate hidden" id="gate">
-  <div class="gate-box">
-    <h3>// ACCESS</h3>
-    <input type="password" id="gatePass" placeholder="password" autocomplete="current-password">
-    <button class="btn full" id="gateBtn">ENTER</button>
-    <div class="hint" id="gateHint"></div>
-  </div>
-</div>
-
-<div class="hist-overlay hidden" id="histOverlay">
-  <div class="hist-panel">
-    <div class="hist-head">
-      <span>CONVERSATION HISTORY</span>
-      <span class="hist-close" id="histClose">✕</span>
-    </div>
-    <input type="text" id="histSearch" class="hist-search" placeholder="Search past conversations...">
-    <div class="hist-results" id="histResults">
-      <div class="hist-empty">Type to search across everything you've discussed.</div>
-    </div>
-  </div>
-</div>
-
-<div class="hist-overlay hidden" id="knowOverlay">
-  <div class="hist-panel">
-    <div class="hist-head">
-      <span>KNOWLEDGE BASE</span>
-      <span class="hist-close" id="knowClose">✕</span>
-    </div>
-    <div class="know-add">
-      <textarea id="knowInput" class="know-textarea" rows="2" placeholder="Add anything Kawalski should always know \u2014 commission rate, product details, targets, context..."></textarea>
-      <button class="btn" id="knowAddBtn" style="margin-top:8px;">ADD TO KNOWLEDGE BASE</button>
-    </div>
-    <div class="hist-results" id="knowResults">
-      <div class="hist-empty">Nothing saved yet. Add a fact above, or just tell Kawalski something worth remembering in chat.</div>
-    </div>
-  </div>
-</div>
-
-<div class="hist-overlay hidden" id="eventsOverlay">
-  <div class="hist-panel">
-    <div class="hist-head">
-      <span>EVENTS & REMINDERS</span>
-      <span class="hist-close" id="eventsClose">✕</span>
-    </div>
-    <div class="know-add">
-      <div class="notif-row">
-        <span id="notifStatus" class="notif-status">Notifications: checking...</span>
-        <button class="btn" id="notifBtn" style="padding:6px 12px; font-size:10px;">ENABLE NOTIFICATIONS</button>
-      </div>
-      <div class="mini-form" style="margin-top:12px;">
-        <div class="field" style="grid-column:1 / -1;"><label>Title</label><input type="text" id="evTitle" placeholder="Follow up with Acme Corp"></div>
-        <div class="field"><label>Date & time</label><input type="datetime-local" id="evWhen"></div>
-        <div class="field"><label>Notes (optional)</label><input type="text" id="evNotes" placeholder=""></div>
-      </div>
-      <button class="btn" id="evAddBtn" style="margin-top:8px;">ADD EVENT</button>
-    </div>
-    <div class="hist-results" id="eventsResults">
-      <div class="hist-empty">Nothing scheduled. Add one above, or just tell Kawalski to plan something.</div>
-    </div>
-  </div>
-</div>
-
-<div class="app" id="app">
-  <div class="topbar">
-    <div class="brand">
-      <div class="orb" id="orb"></div>
-      <div>
-        <div class="brand-text">KAWALSKI</div>
-        <div class="brand-sub">PERSONAL AGENT</div>
-      </div>
-    </div>
-    <div class="topbar-right">
-      <select id="voiceSelect" class="voice-select" title="Voice"></select>
-      <div class="toggle-wrap">
-        <span>Narration</span>
-        <div class="toggle on" id="narrToggle"><div class="knob"></div></div>
-      </div>
-      <div class="clock" id="clock">--:--:--</div>
-    </div>
-  </div>
-
-  <div class="main">
-    <!-- CHAT -->
-    <div class="chat-col">
-      <div class="chat-head">
-        <span>CONVERSATION</span>
-        <span style="display:flex; gap:14px; align-items:center;">
-          <span class="mobile-dash-btn" id="historyBtn" style="display:inline; cursor:pointer; color:var(--cyan);">HISTORY ▸</span>
-          <span class="mobile-dash-btn" id="knowledgeBtn" style="display:inline; cursor:pointer; color:var(--cyan);">KNOWLEDGE ▸</span>
-          <span class="mobile-dash-btn" id="eventsBtn" style="display:inline; cursor:pointer; color:var(--cyan);">EVENTS ▸</span>
-          <span class="mobile-dash-btn" id="mobileDashBtn">STATS ▸</span>
-        </span>
-      </div>
-      <div class="messages" id="messages"></div>
-      <div class="attach-preview hidden" id="attachPreview"></div>
-      <div class="handsfree-badge hidden" id="handsFreeBadge">🔴 LIVE CONVERSATION \u2014 tap the mic to stop</div>
-      <div class="composer">
-        <button class="icon-btn attach" id="attachBtn" title="Attach an image">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-        </button>
-        <input type="file" id="fileInput" accept="image/*" multiple style="display:none">
-        <button class="icon-btn mic" id="micBtn" title="Tap to start a hands-free conversation">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-        </button>
-        <textarea id="input" rows="1" placeholder="Ask Kawalski anything, or log your numbers..."></textarea>
-        <button class="icon-btn send" id="sendBtn" title="Send">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        </button>
-      </div>
-    </div>
-
-    <!-- DASHBOARD -->
-    <div class="dash" id="dash">
-      <div class="panel">
-        <div class="panel-label"><span id="goalLabel">GOAL</span><span class="edit" id="editGoal">EDIT ▸</span></div>
-        <div class="ring-wrap">
-          <div class="ring-outer">
-            <div class="ring-sweep"></div>
-            <div class="ring-track" id="ringTrack" style="--pct:0"></div>
-            <div class="ring-center">
-              <div class="ring-pct" id="ringPct">0<span>%</span></div>
-              <div class="ring-sub" id="ringSub">0 / 0</div>
-            </div>
-          </div>
-          <div class="status-chip status-cyan" id="statusChip">NO GOAL SET</div>
-        </div>
-      </div>
-
-      <div class="panel" id="goalEditPanel" style="display:none;">
-        <div class="panel-label">SET MONTHLY GOAL</div>
-        <div class="mini-form">
-          <div class="field"><label>Metric</label>
-            <select id="goalType"><option value="appointments">Appointments</option><option value="shows">Shows</option><option value="closes">Closes</option><option value="income">Income ($)</option></select>
-          </div>
-          <div class="field" id="goalNumberField"><label>Target</label><input type="number" id="goalNumber" min="1" placeholder="60"></div>
-        </div>
-        <div class="mini-form" id="revenueField" style="display:none; margin-top:8px;">
-          <div class="field" style="grid-column:1 / -1;"><label>Revenue per close ($)</label><input type="number" id="revenuePerClose" min="1" placeholder="e.g. 500"></div>
-        </div>
-        <button class="btn full" id="saveGoal">SAVE GOAL</button>
-      </div>
-
-      <div class="panel">
-        <div class="panel-label">PACE</div>
-        <div class="stat-row"><span class="stat-label">Days Left (working)</span><span class="stat-val" id="sDays">—</span></div>
-        <div class="stat-row"><span class="stat-label">Current Daily Avg</span><span class="stat-val" id="sAvg">—</span></div>
-        <div class="stat-row"><span class="stat-label" id="sReqLabel">Required / Day</span><span class="stat-val hi" id="sReq">—</span></div>
-        <div class="stat-row"><span class="stat-label">Projected End</span><span class="stat-val" id="sProj">—</span></div>
-      </div>
-
-      <div class="panel hidden" id="ladderPanel">
-        <div class="panel-label">KPI LADDER \u00b7 REQUIRED / DAY</div>
-        <div class="stat-row"><span class="stat-label">Closes</span><span class="stat-val hi" id="lClose">—</span></div>
-        <div class="stat-row"><span class="stat-label">Shows</span><span class="stat-val hi" id="lShow">—</span></div>
-        <div class="stat-row"><span class="stat-label">Appointments</span><span class="stat-val hi" id="lAppt">—</span></div>
-        <div class="stat-row"><span class="stat-label">Dials</span><span class="stat-val hi" id="lDial">—</span></div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-label">THIS MONTH</div>
-        <div class="kpi-grid">
-          <div class="kpi"><div class="kpi-name">Dials</div><div class="kpi-val" id="kDials">0</div><div class="kpi-bar"><div class="kpi-fill" id="kDialsBar"></div></div></div>
-          <div class="kpi"><div class="kpi-name">Appts Set</div><div class="kpi-val" id="kAppts">0</div><div class="kpi-bar"><div class="kpi-fill" id="kApptsBar"></div></div></div>
-          <div class="kpi"><div class="kpi-name">Show Rate</div><div class="kpi-val" id="kShow">0<small>%</small></div><div class="kpi-bar"><div class="kpi-fill" id="kShowBar"></div></div></div>
-          <div class="kpi"><div class="kpi-name">Close Rate</div><div class="kpi-val" id="kClose">0<small>%</small></div><div class="kpi-bar"><div class="kpi-fill" id="kCloseBar"></div></div></div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-label">QUICK LOG</div>
-        <div class="mini-form">
-          <div class="field"><label>Dials</label><input type="number" id="qDials" min="0" placeholder="0"></div>
-          <div class="field"><label>Appts</label><input type="number" id="qAppts" min="0" placeholder="0"></div>
-          <div class="field"><label>Shows</label><input type="number" id="qShows" min="0" placeholder="0"></div>
-          <div class="field"><label>Closes</label><input type="number" id="qCloses" min="0" placeholder="0"></div>
-        </div>
-        <button class="btn full" id="quickLog">LOG TODAY</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-const $ = id => document.getElementById(id);
-let PASSWORD = '';
-let narrationOn = true;
-
-// ---------- clock ----------
-function tickClock(){
-  const d = new Date();
-  const p = n => String(n).padStart(2,'0');
-  $('clock').textContent = p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
-}
-setInterval(tickClock, 1000); tickClock();
-
-// ---------- api helper ----------
-async function api(path, opts={}){
-  const headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
-  if(PASSWORD) headers['x-app-password'] = PASSWORD;
-  const res = await fetch(path, Object.assign({}, opts, { headers }));
-  if(res.status === 401) throw new Error('unauthorized');
-  return res.json();
-}
-
-// ---------- narration toggle ----------
-$('narrToggle').addEventListener('click', ()=>{
-  narrationOn = !narrationOn;
-  $('narrToggle').classList.toggle('on', narrationOn);
-  if(!narrationOn && window.speechSynthesis) window.speechSynthesis.cancel();
-});
-
-// ---------- text to speech ----------
-let voices = [];
-let manualVoiceURI = null;
-
-function populateVoiceSelect(){
-  const sel = $('voiceSelect');
-  if(!sel) return;
-  const englishFirst = [...voices].sort((a,b)=>{
-    const ae = /^en/i.test(a.lang) ? 0 : 1, be = /^en/i.test(b.lang) ? 0 : 1;
-    if(ae !== be) return ae - be;
-    return a.name.localeCompare(b.name);
-  });
-  sel.innerHTML = '<option value="">Auto (UK, female)</option>' +
-    englishFirst.map(v => `<option value="${v.voiceURI}">${v.name} (${v.lang})</option>`).join('');
-  if(manualVoiceURI) sel.value = manualVoiceURI;
-}
-function loadVoices(){
-  voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
-  populateVoiceSelect();
-}
-if(window.speechSynthesis){ loadVoices(); window.speechSynthesis.onvoiceschanged = loadVoices; }
-if($('voiceSelect')){
-  $('voiceSelect').addEventListener('change', e => {
-    manualVoiceURI = e.target.value || null;
-    speak("Voice updated. This is how I'll sound from now on.");
-  });
-}
-
-// Picks the most "British intelligence officer" voice available in the
-// browser's installed voice set. Availability varies by browser/OS, so this
-// falls through several tiers rather than assuming one exact voice exists.
-function pickVoice(){
-  if(manualVoiceURI){
-    const chosen = voices.find(v => v.voiceURI === manualVoiceURI);
-    if(chosen) return chosen;
-  }
-  const gb = v => /en-GB/i.test(v.lang);
-  const knownUKFemale = /Sonia|Serena|Kate|Libby|Hazel|Female/i;
-  const knownMale = /Daniel|Arthur|Ryan|George|Male/i;
-
-  // Tier 1: an en-GB voice explicitly named as a known UK female voice
-  let v = voices.find(x => gb(x) && knownUKFemale.test(x.name));
-  // Tier 2: any en-GB voice that isn't explicitly a known male voice
-  if(!v) v = voices.find(x => gb(x) && !knownMale.test(x.name));
-  // Tier 3: any en-GB voice at all
-  if(!v) v = voices.find(gb);
-  // Tier 4: fall back to any English voice
-  if(!v) v = voices.find(x => /en/i.test(x.lang));
-  return v;
-}
-
-let pendingUtterances = 0;
-// Queues one utterance without cancelling anything already queued \u2014 used
-// during a streaming reply so each finished sentence can start speaking
-// immediately while later sentences are still being generated, rather than
-// waiting for the whole reply before saying anything.
-function queueSpeech(text){
-  if(!narrationOn || !window.speechSynthesis || !text || !text.trim()) return false;
-  const u = new SpeechSynthesisUtterance(text);
-  const pref = pickVoice();
-  if(pref) u.voice = pref;
-  // Slightly measured pace and a touch lower pitch reads as more composed /
-  // "briefing" in tone rather than chipper assistant-speak.
-  u.rate = 0.98; u.pitch = 0.92;
-  pendingUtterances++;
-  u.onstart = ()=> $('orb').classList.add('speaking');
-  u.onend = ()=>{
-    pendingUtterances = Math.max(0, pendingUtterances - 1);
-    if(pendingUtterances === 0){ $('orb').classList.remove('speaking'); resumeHandsFreeIfActive(); }
-  };
-  window.speechSynthesis.speak(u);
-  return true;
-}
-// One-off utterance for use outside the streaming reply flow (e.g. the
-// voice-picker test line) \u2014 clears anything pending first.
-function speak(text){
-  if(window.speechSynthesis) window.speechSynthesis.cancel();
-  pendingUtterances = 0;
-  return queueSpeech(text);
-}
-
-// ---------- chat rendering ----------
-// Returns {el, textNode} so callers can live-update the text as a
-// streamed reply arrives, via updateMessageText().
-function addMessage(role, text, imageDataUri){
-  const el = document.createElement('div');
-  el.className = 'msg ' + (role === 'user' ? 'user' : 'aria');
-  if(role !== 'user'){
-    const who = document.createElement('span'); who.className='who'; who.textContent='KAWALSKI'; el.appendChild(who);
-  }
-  if(imageDataUri){
-    const img = document.createElement('img');
-    img.className = 'msg-image'; img.src = imageDataUri;
-    el.appendChild(img);
-  }
-  const textNode = document.createTextNode(text || '');
-  el.appendChild(textNode);
-  $('messages').appendChild(el);
-  $('messages').scrollTop = $('messages').scrollHeight;
-  return { el, textNode };
-}
-function updateMessageText(ref, fullText){
-  if(!ref) return;
-  ref.textNode.textContent = fullText;
-  $('messages').scrollTop = $('messages').scrollHeight;
-}
-function showTyping(){
-  const el = document.createElement('div'); el.className='typing'; el.id='typingIndicator';
-  el.innerHTML = '<span></span><span></span><span></span>';
-  $('messages').appendChild(el); $('messages').scrollTop = $('messages').scrollHeight;
-}
-function hideTyping(){ const t=$('typingIndicator'); if(t) t.remove(); }
-
-// ---------- image attachments ----------
-const MAX_ATTACH = 4;
-const MAX_ATTACH_BYTES = 6 * 1024 * 1024; // 6MB per file, before base64 inflation
-let pendingImages = []; // { media_type, data (base64, no prefix) }
-
-function renderAttachPreview(){
-  const wrap = $('attachPreview');
-  if(pendingImages.length === 0){ wrap.classList.add('hidden'); wrap.innerHTML=''; return; }
-  wrap.classList.remove('hidden');
-  wrap.innerHTML = pendingImages.map((img,i) => `
-    <div class="attach-thumb">
-      <img src="data:${img.media_type};base64,${img.data}">
-      <div class="rm" data-i="${i}">✕</div>
-    </div>
-  `).join('');
-  wrap.querySelectorAll('.rm').forEach(el=>{
-    el.addEventListener('click', ()=>{ pendingImages.splice(Number(el.dataset.i),1); renderAttachPreview(); });
-  });
-}
-function fileToImagePart(file){
-  return new Promise((resolve,reject)=>{
-    if(file.size > MAX_ATTACH_BYTES){ reject(new Error(file.name+' is too large (max 6MB)')); return; }
-    const reader = new FileReader();
-    reader.onload = ()=>{
-      const [, mediaType, data] = reader.result.match(/^data:(.+);base64,(.*)$/) || [];
-      if(!data){ reject(new Error('could not read '+file.name)); return; }
-      resolve({ media_type: mediaType, data });
-    };
-    reader.onerror = ()=> reject(new Error('could not read '+file.name));
-    reader.readAsDataURL(file);
-  });
-}
-$('attachBtn').addEventListener('click', ()=> $('fileInput').click());
-$('fileInput').addEventListener('change', async (e)=>{
-  const files = Array.from(e.target.files || []).slice(0, MAX_ATTACH - pendingImages.length);
-  for(const file of files){
-    try{ pendingImages.push(await fileToImagePart(file)); }
-    catch(err){ addMessage('aria', err.message); }
-  }
-  renderAttachPreview();
-  e.target.value = '';
-});
-
-// ---------- send ----------
-let sending = false;
-async function send(text){
-  if(sending) return;
-  text = (text || $('input').value).trim();
-  const images = pendingImages;
-  if(!text && images.length===0) return;
-  sending = true;
-  $('input').value=''; autosize();
-  const previewUri = images[0] ? `data:${images[0].media_type};base64,${images[0].data}` : null;
-  addMessage('user', text || '(image)', previewUri);
-  pendingImages = []; renderAttachPreview();
-  showTyping();
-
-  if(window.speechSynthesis) window.speechSynthesis.cancel();
-  pendingUtterances = 0;
-
-  let bubbleRef = null;
-  let fullText = '';
-  let sentenceBuf = '';
-  let sawText = false;
-
-  function onDelta(delta){
-    if(!sawText){ hideTyping(); bubbleRef = addMessage('aria', ''); sawText = true; }
-    fullText += delta;
-    updateMessageText(bubbleRef, fullText);
-    sentenceBuf += delta;
-    // Speak each complete sentence as soon as it's finished, instead of
-    // waiting for the whole reply \u2014 this is what makes Kawalski feel fast:
-    // you start hearing sentence one while sentence three is still generating.
-    const parts = sentenceBuf.split(/(?<=[.!?])\s+/);
-    if(parts.length > 1){
-      for(let i=0;i<parts.length-1;i++) queueSpeech(parts[i]);
-      sentenceBuf = parts[parts.length-1];
-    }
-  }
-
-  try{
-    const headers = Object.assign({'Content-Type':'application/json'}, PASSWORD ? {'x-app-password':PASSWORD} : {});
-    const res = await fetch('/api/chat', { method:'POST', headers, body: JSON.stringify({ message:text, images }) });
-    if(res.status === 401) throw new Error('unauthorized');
-    if(!res.ok || !res.body) throw new Error('request failed');
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    let summary = null;
-    let streamErr = null;
-
-    while(true){
-      const {done, value} = await reader.read();
-      if(done) break;
-      buf += decoder.decode(value, {stream:true});
-      const lines = buf.split('\n');
-      buf = lines.pop();
-      for(const line of lines){
-        if(!line.trim()) continue;
-        let evt; try{ evt = JSON.parse(line); }catch(e){ continue; }
-        if(evt.type === 'text') onDelta(evt.delta);
-        else if(evt.type === 'done') summary = evt.summary;
-        else if(evt.type === 'error') streamErr = evt.message;
+      var params = new URLSearchParams(window.location.search);
+      var pathParts = window.location.pathname.split('/').filter(Boolean);
+      var code = (params.get('ref') || params.get('code') || params.get('referral') || '').toLowerCase();
+      if (!code && pathParts.length >= 2 && pathParts[0] === 'r') {
+        code = String(pathParts[1] || '').toLowerCase();
       }
-    }
-    if(buf.trim()){
-      try{ const evt = JSON.parse(buf); if(evt.type==='text') onDelta(evt.delta); else if(evt.type==='done') summary=evt.summary; else if(evt.type==='error') streamErr=evt.message; }catch(e){}
-    }
+      code = code.replace(/[^a-z0-9_-]/g, '').slice(0, 32);
 
-    hideTyping();
-    if(streamErr) throw new Error(streamErr);
-    if(sentenceBuf.trim()) queueSpeech(sentenceBuf);
-    if(pendingUtterances === 0) resumeHandsFreeIfActive(); // narration off, or nothing was queued
-    if(summary) renderDash(summary);
-  }catch(err){
-    hideTyping();
-    addMessage('aria', err.message==='unauthorized' ? 'Session expired. Refresh and re-enter your password.' : 'Connection issue — is the server running?');
-    resumeHandsFreeIfActive();
-  }
-  sending = false;
-}
-$('sendBtn').addEventListener('click', ()=> send());
-$('input').addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); send(); } });
+      var campaign = (params.get('campaign') || params.get('utm_campaign') || '').toLowerCase();
+      campaign = campaign.replace(/[^a-z0-9_-]/g, '').slice(0, 64);
 
-function autosize(){ const t=$('input'); t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,120)+'px'; }
-$('input').addEventListener('input', autosize);
+      var clickId = null;
+      var deepLink = 'streak://ref';
 
-// ---------- voice input (Web Speech API) ----------
-// Hands-free mode: one tap turns on a continuous back-and-forth loop.
-// Kawalski listens, sends what you said, speaks the reply, then
-// automatically starts listening again \u2014 no need to tap the mic each turn.
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recog = null, listening = false, handsFree = false;
-
-function updateHandsFreeUI(){
-  $('micBtn').classList.toggle('handsfree', handsFree);
-  $('handsFreeBadge').classList.toggle('hidden', !handsFree);
-}
-function startListening(){
-  if(!recog || listening) return;
-  listening = true; $('micBtn').classList.add('listening'); $('input').value='';
-  try{ recog.start(); }catch(e){ listening=false; $('micBtn').classList.remove('listening'); }
-}
-function stopListening(){
-  if(recog && listening){ try{ recog.stop(); }catch(e){} }
-  listening = false; $('micBtn').classList.remove('listening');
-}
-function resumeHandsFreeIfActive(){
-  if(handsFree && !listening){
-    // small pause so it doesn't clip the tail end of the reply / feels natural
-    setTimeout(()=>{ if(handsFree && !listening) startListening(); }, 350);
-  }
-}
-
-if(SR){
-  recog = new SR();
-  recog.lang = 'en-US'; recog.interimResults = true;
-  // continuous:true stops the browser's own (short, ~1-2s) auto-cutoff from
-  // ending the session mid-sentence. Instead we control the pause ourselves
-  // below with a 2-second silence timer, reset on every new word detected.
-  recog.continuous = true;
-  const SILENCE_MS = 2000;
-  let silenceTimer = null;
-
-  recog.onresult = e=>{
-    let interim=''; let finalText='';
-    for(let i=0;i<e.results.length;i++){
-      if(e.results[i].isFinal) finalText += e.results[i][0].transcript;
-      else interim += e.results[i][0].transcript;
-    }
-    $('input').value = (finalText || interim); autosize();
-    // Any new speech (interim or final) resets the pause clock \u2014 the user
-    // only gets cut off after a genuine 2-second gap, not mid-thought.
-    clearTimeout(silenceTimer);
-    silenceTimer = setTimeout(()=>{ if(listening){ try{ recog.stop(); }catch(e){} } }, SILENCE_MS);
-  };
-  recog.onend = ()=>{
-    clearTimeout(silenceTimer);
-    listening=false; $('micBtn').classList.remove('listening');
-    const text = $('input').value.trim();
-    if(text){ send(); }
-    else if(handsFree){ setTimeout(()=>{ if(handsFree) startListening(); }, 500); }
-  };
-  recog.onerror = (e)=>{
-    clearTimeout(silenceTimer);
-    listening=false; $('micBtn').classList.remove('listening');
-    if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
-      handsFree = false; updateHandsFreeUI();
-      addMessage('aria', "I don't have microphone permission \u2014 check your browser settings.");
-      return;
-    }
-    // Transient errors (no-speech, network blip, etc.) just retry in hands-free mode.
-    if(handsFree){ setTimeout(()=>{ if(handsFree) startListening(); }, 600); }
-  };
-}
-
-$('micBtn').addEventListener('click', ()=>{
-  if(!recog){ addMessage('aria', "Voice input isn't supported in this browser — try Chrome, or just type."); return; }
-  if(window.speechSynthesis) window.speechSynthesis.cancel();
-  if(handsFree){
-    handsFree = false; updateHandsFreeUI(); stopListening();
-  } else {
-    handsFree = true; updateHandsFreeUI(); startListening();
-  }
-});
-
-// ---------- dashboard ----------
-function renderDash(s){
-  if(!s) return;
-  const t = s.totals || {dials:0,appts:0,shows:0,closes:0};
-  $('kDials').textContent = t.dials;
-  $('kAppts').textContent = t.appts;
-  $('kShow').innerHTML = (s.show_rate_pct||0)+'<small>%</small>';
-  $('kClose').innerHTML = (s.close_rate_pct||0)+'<small>%</small>';
-  $('kDialsBar').style.width = Math.min(t.dials/2,100)+'%';
-  $('kApptsBar').style.width = Math.min(t.appts*2,100)+'%';
-  $('kShowBar').style.width = Math.min(s.show_rate_pct||0,100)+'%';
-  $('kCloseBar').style.width = Math.min(s.close_rate_pct||0,100)+'%';
-
-  const labelMap={appointments:'GOAL · APPOINTMENTS',shows:'GOAL · SHOWS',closes:'GOAL · CLOSES',income:'GOAL · INCOME'};
-  if(s.goal){ $('goalLabel').textContent = labelMap[s.goal.type]||'GOAL'; }
-  const isIncome = s.goal && s.goal.type === 'income';
-  const money = n => '$'+Number(n||0).toLocaleString();
-  const fmt = n => isIncome ? money(n) : n;
-
-  if(s.pace){
-    const p = s.pace;
-    animateRing(p.pct_to_goal||0);
-    $('ringSub').textContent = fmt(p.current_value)+' / '+fmt(p.target);
-    $('sDays').textContent = p.working_days_remaining+' of '+p.working_days_total;
-    $('sAvg').textContent = fmt(p.current_daily_avg);
-    $('sReqLabel').textContent = isIncome ? 'Required $ / Day' : 'Required / Day';
-    $('sReq').textContent = fmt(p.required_per_remaining_day);
-    $('sProj').textContent = fmt(p.projected_month_end)+' / '+fmt(p.target);
-    const chip=$('statusChip');
-    const map={target_hit:['status-green','TARGET HIT'],on_pace:['status-green','ON PACE'],at_risk:['status-amber','AT RISK'],behind:['status-red','BEHIND']};
-    const [cls,txt]=map[p.status]||['status-cyan','—'];
-    chip.className='status-chip '+cls; chip.textContent=txt;
-
-    if(isIncome && typeof p.required_closes_per_day === 'number'){
-      $('ladderPanel').classList.remove('hidden');
-      $('lClose').textContent = p.required_closes_per_day;
-      $('lShow').textContent = typeof p.required_shows_per_day === 'number' ? p.required_shows_per_day : '—';
-      $('lAppt').textContent = typeof p.required_appts_per_day === 'number' ? p.required_appts_per_day : '—';
-      $('lDial').textContent = typeof p.required_dials_per_day === 'number' ? p.required_dials_per_day : '—';
-    } else {
-      $('ladderPanel').classList.add('hidden');
-    }
-  } else {
-    animateRing(0); $('ringSub').textContent='0 / 0';
-    $('statusChip').className='status-chip status-cyan'; $('statusChip').textContent='NO GOAL SET';
-    $('sReqLabel').textContent = 'Required / Day';
-    $('ladderPanel').classList.add('hidden');
-  }
-}
-
-let ringAnim=null;
-function animateRing(target){
-  const track=$('ringTrack'), pctEl=$('ringPct');
-  const current=parseFloat(track.style.getPropertyValue('--pct'))||0;
-  if(ringAnim) cancelAnimationFrame(ringAnim);
-  const start=performance.now(), dur=600;
-  function step(now){
-    const tt=Math.min((now-start)/dur,1); const e=1-Math.pow(1-tt,3);
-    const val=current+(target-current)*e;
-    track.style.setProperty('--pct', val.toFixed(1));
-    pctEl.innerHTML=Math.round(val)+'<span>%</span>';
-    if(tt<1) ringAnim=requestAnimationFrame(step);
-  }
-  ringAnim=requestAnimationFrame(step);
-}
-
-// goal editor
-$('editGoal').addEventListener('click', ()=>{ const p=$('goalEditPanel'); p.style.display = p.style.display==='none'?'block':'none'; });
-$('goalType').addEventListener('change', ()=>{
-  const isIncome = $('goalType').value === 'income';
-  $('revenueField').style.display = isIncome ? 'grid' : 'none';
-  $('goalNumberField').querySelector('label').textContent = isIncome ? 'Monthly income target ($)' : 'Target';
-  $('goalNumber').placeholder = isIncome ? 'e.g. 8000' : '60';
-});
-$('saveGoal').addEventListener('click', async ()=>{
-  const goal_type=$('goalType').value; const goal_number=Number($('goalNumber').value);
-  if(!goal_number||goal_number<=0){ $('goalNumber').style.borderColor='var(--red)'; return; }
-  const body = { goal_type, goal_number };
-  if(goal_type === 'income'){
-    const rpc = Number($('revenuePerClose').value);
-    if(!rpc || rpc<=0){ $('revenuePerClose').style.borderColor='var(--red)'; return; }
-    body.revenue_per_close = rpc;
-  }
-  const data=await api('/api/goal',{method:'POST',body:JSON.stringify(body)});
-  $('goalEditPanel').style.display='none';
-  renderDash(data.summary);
-});
-
-// quick log
-$('quickLog').addEventListener('click', async ()=>{
-  const body={ dials:+$('qDials').value||0, appointments_set:+$('qAppts').value||0, shows:+$('qShows').value||0, closes:+$('qCloses').value||0 };
-  if(!body.dials&&!body.appointments_set&&!body.shows&&!body.closes) return;
-  const data=await api('/api/log',{method:'POST',body:JSON.stringify(body)});
-  ['qDials','qAppts','qShows','qCloses'].forEach(id=>$(id).value='');
-  renderDash(data.summary);
-  addMessage('aria', 'Logged. '+(data.summary.pace?("You're at "+data.summary.pace.current_value+' of '+data.summary.pace.target+' for the month.'):"Set a goal and I'll start tracking your pace."));
-});
-
-// mobile dash toggle
-$('mobileDashBtn').addEventListener('click', ()=> $('dash').classList.toggle('mobile-show'));
-
-// ---------- history / search panel ----------
-function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function highlight(text, q){
-  const safe = escapeHtml(text);
-  if(!q) return safe;
-  const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return safe.replace(new RegExp('('+esc+')','ig'), '<mark>$1</mark>');
-}
-function formatWhen(ts){
-  const d = new Date(ts);
-  return d.toLocaleDateString(undefined,{month:'short',day:'numeric'}) + ' · ' + d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
-}
-
-$('historyBtn').addEventListener('click', ()=>{
-  $('histOverlay').classList.remove('hidden');
-  $('histSearch').value = '';
-  $('histResults').innerHTML = '<div class="hist-empty">Type to search across everything you\'ve discussed.</div>';
-  setTimeout(()=> $('histSearch').focus(), 50);
-});
-$('histClose').addEventListener('click', ()=> $('histOverlay').classList.add('hidden'));
-$('histOverlay').addEventListener('click', e=>{ if(e.target.id==='histOverlay') $('histOverlay').classList.add('hidden'); });
-
-let histDebounce = null;
-$('histSearch').addEventListener('input', e=>{
-  const q = e.target.value.trim();
-  clearTimeout(histDebounce);
-  if(!q){
-    $('histResults').innerHTML = '<div class="hist-empty">Type to search across everything you\'ve discussed.</div>';
-    return;
-  }
-  histDebounce = setTimeout(async ()=>{
-    try{
-      const results = await api('/api/search?q=' + encodeURIComponent(q));
-      if(!results.length){
-        $('histResults').innerHTML = '<div class="hist-empty">No matches for "'+escapeHtml(q)+'".</div>';
-        return;
+      function setOpenAppHref() {
+        var btn = document.getElementById('openAppBtn');
+        if (!btn) return;
+        if (clickId && code) {
+          btn.href = 'streak://ref?click=' + encodeURIComponent(clickId) + '&code=' + encodeURIComponent(code) +
+            (campaign ? '&campaign=' + encodeURIComponent(campaign) : '');
+          btn.hidden = false;
+        } else if (code) {
+          btn.href = 'streak://ref?code=' + encodeURIComponent(code) +
+            (campaign ? '&campaign=' + encodeURIComponent(campaign) : '');
+          btn.hidden = false;
+        }
       }
-      $('histResults').innerHTML = results.map(r => `
-        <div class="hist-item">
-          <div class="hist-meta"><span class="${r.role==='user'?'role-user':'role-aria'}">${r.role==='user'?'YOU':'KAWALSKI'}</span><span>${formatWhen(r.created_at)}</span></div>
-          ${r.image_data ? `<img src="${r.image_data}" class="msg-image" style="max-width:120px; max-height:120px;">` : ''}
-          <div class="hist-text">${highlight(r.content, q)}</div>
-        </div>
-      `).join('');
-    }catch(err){
-      $('histResults').innerHTML = '<div class="hist-empty">Search failed \u2014 is the server running?</div>';
-    }
-  }, 250);
-});
 
-// ---------- knowledge base panel ----------
-async function loadKnowledge(){
-  try{
-    const notes = await api('/api/notes');
-    if(!notes.length){
-      $('knowResults').innerHTML = '<div class="hist-empty">Nothing saved yet. Add a fact above, or just tell Kawalski something worth remembering in chat.</div>';
-      return;
-    }
-    $('knowResults').innerHTML = notes.map(n => `
-      <div class="hist-item" data-id="${n.id}">
-        <div class="hist-meta"><span>${formatWhen(n.created_at)}</span><span class="know-del" data-id="${n.id}">DELETE</span></div>
-        <div class="hist-text">${escapeHtml(n.content)}</div>
-      </div>
-    `).join('');
-    $('knowResults').querySelectorAll('.know-del').forEach(el=>{
-      el.addEventListener('click', async ()=>{
-        await api('/api/notes/'+el.dataset.id, { method:'DELETE' });
-        loadKnowledge();
-      });
-    });
-  }catch(err){
-    $('knowResults').innerHTML = '<div class="hist-empty">Could not load \u2014 is the server running?</div>';
-  }
-}
-$('knowledgeBtn').addEventListener('click', ()=>{
-  $('knowOverlay').classList.remove('hidden');
-  $('knowInput').value='';
-  loadKnowledge();
-});
-$('knowClose').addEventListener('click', ()=> $('knowOverlay').classList.add('hidden'));
-$('knowOverlay').addEventListener('click', e=>{ if(e.target.id==='knowOverlay') $('knowOverlay').classList.add('hidden'); });
-$('knowAddBtn').addEventListener('click', async ()=>{
-  const content = $('knowInput').value.trim();
-  if(!content) return;
-  try{
-    await api('/api/notes', { method:'POST', body: JSON.stringify({ content }) });
-    $('knowInput').value='';
-    loadKnowledge();
-  }catch(err){
-    $('knowResults').innerHTML = '<div class="hist-empty">Could not save \u2014 is the server running?</div>';
-  }
-});
+      function track(eventName) {
+        if (!code) return Promise.resolve(null);
+        return fetch(SUPABASE_URL + '/functions/v1/track-referral-click', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({
+            code: code,
+            event: eventName || 'view',
+            click_id: clickId || undefined,
+            campaign: campaign || undefined,
+          }),
+        })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (res) {
+            if (!res.ok || !res.j || !res.j.click_id) return null;
+            clickId = res.j.click_id;
+            try { localStorage.setItem('streak_ref_click', clickId); } catch (e) {}
+            try { localStorage.setItem('streak_ref', code); } catch (e) {}
+            if (campaign) {
+              try { localStorage.setItem('streak_ref_campaign', campaign); } catch (e) {}
+            }
+            if (res.j.campaign) campaign = String(res.j.campaign);
+            if (res.j.deep_link) deepLink = res.j.deep_link;
+            setOpenAppHref();
+            return clickId;
+          })
+          .catch(function () { return null; });
+      }
 
-// ---------- events / reminders ----------
-function formatEventWhen(ms){
-  const d = new Date(ms);
-  return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) + ' \u00b7 ' + d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
-}
-async function loadEvents(){
-  try{
-    const events = await api('/api/events');
-    if(!events.length){
-      $('eventsResults').innerHTML = '<div class="hist-empty">Nothing scheduled. Add one above, or just tell Kawalski to plan something.</div>';
-      return;
-    }
-    $('eventsResults').innerHTML = events.map(e => `
-      <div class="hist-item">
-        <div class="hist-meta"><span class="role-user">${formatEventWhen(e.event_at)}</span><span class="know-del" data-id="${e.id}">DELETE</span></div>
-        <div class="hist-text"><strong>${escapeHtml(e.title)}</strong>${e.notes ? '<br>'+escapeHtml(e.notes) : ''}</div>
-      </div>
-    `).join('');
-    $('eventsResults').querySelectorAll('.know-del').forEach(el=>{
-      el.addEventListener('click', async ()=>{
-        await api('/api/events/'+el.dataset.id, { method:'DELETE' });
-        loadEvents();
-      });
-    });
-  }catch(err){
-    $('eventsResults').innerHTML = '<div class="hist-empty">Could not load \u2014 is the server running?</div>';
-  }
-}
-$('eventsBtn').addEventListener('click', ()=>{
-  $('eventsOverlay').classList.remove('hidden');
-  $('evTitle').value=''; $('evWhen').value=''; $('evNotes').value='';
-  loadEvents();
-  refreshNotifStatus();
-});
-$('eventsClose').addEventListener('click', ()=> $('eventsOverlay').classList.add('hidden'));
-$('eventsOverlay').addEventListener('click', e=>{ if(e.target.id==='eventsOverlay') $('eventsOverlay').classList.add('hidden'); });
-$('evAddBtn').addEventListener('click', async ()=>{
-  const title = $('evTitle').value.trim();
-  const when = $('evWhen').value;
-  if(!title || !when) return;
-  try{
-    await api('/api/events', { method:'POST', body: JSON.stringify({ title, event_at: new Date(when).getTime(), notes: $('evNotes').value.trim() || undefined }) });
-    $('evTitle').value=''; $('evWhen').value=''; $('evNotes').value='';
-    loadEvents();
-  }catch(err){
-    $('eventsResults').innerHTML = '<div class="hist-empty">Could not save \u2014 is the server running?</div>';
-  }
-});
+      var storeBtn = document.getElementById('storeBtn');
+      storeBtn.href = STORE;
 
-// ---------- push notifications ----------
-function urlBase64ToUint8Array(base64String){
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for(let i=0;i<rawData.length;i++) outputArray[i] = rawData.charCodeAt(i);
-  return outputArray;
-}
-let swRegistration = null;
-async function registerServiceWorker(){
-  if(!('serviceWorker' in navigator)) return null;
-  try{
-    swRegistration = await navigator.serviceWorker.register('/sw.js');
-    return swRegistration;
-  }catch(err){ console.error('service worker registration failed', err); return null; }
-}
-async function refreshNotifStatus(){
-  const el = $('notifStatus');
-  if(!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)){
-    el.textContent = 'Not supported in this browser'; el.className='notif-status off';
-    $('notifBtn').style.display='none';
-    return;
-  }
-  $('notifBtn').style.display='';
-  if(Notification.permission === 'denied'){
-    el.textContent = 'Blocked \u2014 enable in browser settings'; el.className='notif-status off';
-    $('notifBtn').textContent='RETRY';
-    return;
-  }
-  const reg = swRegistration || await registerServiceWorker();
-  const sub = reg ? await reg.pushManager.getSubscription() : null;
-  if(sub){
-    el.textContent = 'Notifications on'; el.className='notif-status on';
-    $('notifBtn').textContent='SEND TEST';
-  } else {
-    el.textContent = 'Notifications off'; el.className='notif-status off';
-    $('notifBtn').textContent='ENABLE NOTIFICATIONS';
-  }
-}
-$('notifBtn').addEventListener('click', async ()=>{
-  const reg = swRegistration || await registerServiceWorker();
-  if(!reg){ $('notifStatus').textContent='Could not register service worker'; return; }
-  const existing = await reg.pushManager.getSubscription();
-  if(existing){
-    // Button doubles as "send test" once already subscribed
-    try{ await api('/api/push/test', { method:'POST' }); $('notifStatus').textContent='Test sent \u2014 check your device'; }
-    catch(err){ $('notifStatus').textContent='Test failed: '+(err.message||'unknown error'); }
-    return;
-  }
-  const permission = await Notification.requestPermission();
-  if(permission !== 'granted'){ refreshNotifStatus(); return; }
-  try{
-    const cfg = await api('/api/push/public-key');
-    if(!cfg.enabled){
-      $('notifStatus').textContent = 'Server has no VAPID keys configured yet';
-      $('notifStatus').className = 'notif-status off';
-      return;
-    }
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(cfg.publicKey),
-    });
-    await api('/api/push/subscribe', { method:'POST', body: JSON.stringify(sub) });
-    refreshNotifStatus();
-  }catch(err){
-    $('notifStatus').textContent = 'Subscription failed: '+(err.message||'unknown error');
-    $('notifStatus').className = 'notif-status off';
-  }
-});
+      if (code) {
+        try {
+          var saved = localStorage.getItem('streak_ref_click');
+          if (saved) clickId = saved;
+        } catch (e) {}
 
-// ---------- boot ----------
-async function boot(){
-  // check whether a password is needed
-  let cfg;
-  try{ cfg = await (await fetch('/api/config')).json(); }catch(e){ cfg={passwordRequired:false}; }
-  if(cfg.passwordRequired){
-    $('gate').classList.remove('hidden');
-    $('gateBtn').addEventListener('click', tryGate);
-    $('gatePass').addEventListener('keydown', e=>{ if(e.key==='Enter') tryGate(); });
-    return;
-  }
-  await start();
-}
-async function tryGate(){
-  PASSWORD = $('gatePass').value;
-  try{
-    await api('/api/summary');
-    $('gate').classList.add('hidden');
-    await start();
-  }catch(e){ $('gateHint').textContent='Incorrect password.'; }
-}
-async function start(){
-  registerServiceWorker();
-  // load history
-  try{
-    const hist = await api('/api/history');
-    if(hist.length===0){
-      addMessage('aria', "Online. Ask me anything \u2014 sales, marketing, research, writing, whatever's on your plate. I also track your numbers, so tell me what you did today or ask how you're pacing. Set a monthly goal whenever you're ready.");
-    } else {
-      hist.forEach(m => addMessage(m.role==='user'?'user':'aria', m.content, m.image_data || null));
-    }
-  }catch(e){ addMessage('aria', 'Online, but I could not load history — is the server running?'); }
-  // load dashboard
-  try{ const s = await api('/api/summary'); renderDash(s); }catch(e){}
-}
-boot();
-</script>
+        document.getElementById('title').textContent = 'You were referred to Streak';
+        document.getElementById('body').textContent =
+          'Download the app and create your account to get started.';
+        document.getElementById('hint').textContent =
+          'Shareable link: https://streakofficial.com/r/?ref=' + code +
+          (campaign ? '&campaign=' + campaign : '');
+        setOpenAppHref();
+
+        track('view');
+
+        storeBtn.addEventListener('click', function () {
+          track('download');
+        });
+      }
+    })();
+  </script>
 </body>
 </html>
